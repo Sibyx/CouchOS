@@ -9,6 +9,7 @@ struct RemoteView: View {
         VStack(spacing: 14) {
             header
             if model.airplayActive { airplayBanner } else { nowPlaying }
+            apps
             Touchpad()
             controls
             transport
@@ -65,6 +66,24 @@ struct RemoteView: View {
         .padding(12)
         .frame(minHeight: 48)
         .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.orange))
+    }
+
+    private var apps: some View {
+        HStack(spacing: 8) {
+            ForEach(TVApp.allCases) { app in
+                Button { model.open(app) } label: {
+                    VStack(spacing: 4) {
+                        Image(systemName: app.symbol).font(.title3)
+                        Text(app.title).font(.caption2)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .foregroundStyle(.white)
+                    .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(white: 0.15)))
+                }
+                .buttonStyle(PressStyle())
+                .accessibilityLabel("Open \(app.title)")
+            }
+        }
     }
 
     private var controls: some View {

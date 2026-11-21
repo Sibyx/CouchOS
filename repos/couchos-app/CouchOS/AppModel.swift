@@ -26,6 +26,40 @@ enum Key: String, CaseIterable {
     }
 }
 
+/// Things the TV can show. Plex is PM4K (it reactivates itself if already
+/// open); the rest are Kodi's own windows.
+enum TVApp: String, CaseIterable, Identifiable {
+    case plex, photos, music, kodi
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .plex: "Plex"
+        case .photos: "Photos"
+        case .music: "Music"
+        case .kodi: "Kodi"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .plex: "play.tv"
+        case .photos: "photo.on.rectangle"
+        case .music: "music.note"
+        case .kodi: "square.grid.2x2"
+        }
+    }
+
+    var rpc: (method: String, params: [String: Any]) {
+        switch self {
+        case .plex: ("Addons.ExecuteAddon", ["addonid": "script.plexmod"])
+        case .photos: ("GUI.ActivateWindow", ["window": "pictures"])
+        case .music: ("GUI.ActivateWindow", ["window": "music"])
+        case .kodi: ("GUI.ActivateWindow", ["window": "home"])
+        }
+    }
+}
+
 struct NowPlaying: Equatable {
     var title: String
     var subtitle: String
@@ -114,6 +148,14 @@ final class AppModel {
         tap.prepare()
         let rpc = key.rpc
         kodi.call(rpc.method, rpc.params)
+    }
+
+    func open(_ app: TVApp) {
+        thud.impactOccurred()
+        let rpc = app.rpc
+        kodi.call(rpc.method, rpc.params) { [weak self] result in
+            if result == nil { self?.message = "The TV didn't open \(app.title). Is Kodi running?" }
+        }
     }
 
     /// Momentum after a fast swipe: extra steps that slow down, like a list

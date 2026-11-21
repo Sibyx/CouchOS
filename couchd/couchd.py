@@ -374,6 +374,48 @@ def now_playing() -> dict | None:
 # --- HTTP API --------------------------------------------------------------------
 
 
+class DisplayWatchdog:
+    """Restart Kodi if it runs without holding the display.
+
+    Kodi claims DRM master only once, at startup. If anything else had the
+    display open at that moment, Kodi keeps running but draws nothing and the
+    TV shows the kernel console (seen 2026-11-21). Kodi can't recover alone.
+    """
+
+    INTERVAL = 15
+
+    def start(self) -> None:
+        threading.Thread(target=self._watch, name="display", daemon=True).start()
+
+    def _watch(self) -> None:
+        misses = 0
+        while True:
+            time.sleep(self.INTERVAL)
+            try:
+                if not unit_active("kodi.service"):
+                    misses = 0
+                    continue
+                misses = 0 if self.kodi_is_master() is not False else misses + 1
+                if misses >= 2:
+                    log.warning("Kodi is running without the display; restarting it")
+                    unit_action("restart", "kodi.service")
+                    misses = 0
+            except Exception:
+                log.exception("display watchdog failed")
+
+    @staticmethod
+    def kodi_is_master() -> bool | None:
+        out = run("sudo", "-n", "/usr/bin/cat", "/sys/kernel/debug/dri/0/clients")
+        if out.returncode != 0:
+            return None  # can't tell; never restart on missing information
+        for line in out.stdout.splitlines():
+            fields = line.split()
+            # command tgid dev master a uid ...
+            if len(fields) >= 4 and fields[0] == "kodi.bin" and fields[2] == "0":
+                return fields[3] == "y"
+        return None
+
+
 def addresses() -> list[str]:
     out = run("ip", "-4", "-o", "addr", "show", "scope", "global").stdout
     return re.findall(r"inet (\d+\.\d+\.\d+\.\d+)/", out)
@@ -529,6 +571,7 @@ def main() -> None:
     logging.basicConfig(level=os.environ.get("COUCHD_LOG", "INFO"), format="%(levelname)s %(name)s: %(message)s")
     app = App()
     app.airplay.start()
+    DisplayWatchdog().start()
     server = ThreadingHTTPServer((BIND, PORT), make_handler(app))
     server.daemon_threads = True
     log.info("couchd %s listening on %s:%d", VERSION, BIND, PORT)

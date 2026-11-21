@@ -31,6 +31,31 @@ kodi_package: kodi
 kodi_binary: /usr/bin/kodi
 kodi_audio_backend: pulseaudio   # PipeWire's pulse server
 kodi_webserver_port: 8080
+
+# Picture quality, enforced over JSON-RPC on every run (Kodi owns
+# guisettings.xml). Already right by default on this build: GUI rendered at
+# 1080 (limitguisize 3), DRM PRIME "Direct To Plane" video (hardware plane,
+# display scaler, no GL copy), 1920x1080@60 RGB 8-bit output.
+kodi_settings:
+  # Only true 1080p modes for refresh-rate matching: no interlaced, no 720p,
+  # no 29.97/30 Hz. Film plays at 23.976/24 Hz instead of 60 Hz judder.
+  videoscreen.whitelist:
+    - "0192001080023.97602pstd"
+    - "0192001080024.00000pstd"
+    - "0192001080025.00000pstd"
+    - "0192001080050.00000pstd"
+    - "0192001080059.94006pstd"
+    - "DESKTOP"
+  # 25 fps content at 50 Hz (25 Hz flickers on most TVs).
+  videoscreen.whitelistdoublerefreshrate: true
+  # Give the TV time to lock after a mode change (first frames are lost otherwise). Unit: 0.1 s.
+  videoscreen.delayrefreshchange: 5
+  videoplayer.adjustrefreshrate: 2
+  # Video clock follows the display: no judder, audio resampled to match.
+  videoplayer.usedisplayasclock: true
+  videoplayer.useprimedecoder: true
+  videoplayer.useprimerenderer: 0
+  videoscreen.limitguisize: 3
 pm4k_settings: "/home/{{ tv_user }}/.kodi/userdata/addon_data/script.plexmod/settings.xml"
 
 # PM4K (PlexMod for Kodi). The upstream tags are stale; this is the

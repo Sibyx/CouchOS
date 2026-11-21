@@ -47,8 +47,13 @@
     dest: /etc/sudoers.d/020_{{ tv_user }}-power
     mode: "0440"
     validate: visudo -cf %s
+    # The DRM clients file (root-only debugfs) shows whether Kodi holds the
+    # display; couchd restarts Kodi if it doesn't (TV would show the console).
+    # It runs every 15 s, so it must not write sudo/PAM logs to the SD card.
     content: |
-      {{ tv_user }} ALL=(root) NOPASSWD: /usr/bin/systemctl reboot, /usr/bin/systemctl poweroff
+      Cmnd_Alias COUCHOS_DRM = /usr/bin/cat /sys/kernel/debug/dri/0/clients
+      Defaults!COUCHOS_DRM !syslog, !pam_session
+      {{ tv_user }} ALL=(root) NOPASSWD: /usr/bin/systemctl reboot, /usr/bin/systemctl poweroff, COUCHOS_DRM
 
 # Listed parent-first: the file module would create missing parents as root.
 - name: User-owned config directories

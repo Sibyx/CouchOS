@@ -100,6 +100,25 @@
   register: pm4k_enable
   changed_when: (pm4k_enable.stdout | from_json).changed
 
+- name: Picture quality settings
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ kodi_webserver_port }}/jsonrpc"
+    method: POST
+    body_format: json
+    body:
+      jsonrpc: "2.0"
+      id: 1
+      method: Settings.SetSettingValue
+      params:
+        setting: "{{ item.key }}"
+        value: "{{ item.value }}"
+  loop: "{{ kodi_settings | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  register: kodi_setting
+  failed_when: kodi_setting.json.result | default(false) != true
+  changed_when: false
+
 # PM4K's "Start Plex On Kodi Startup" (kiosk.mode): Plex opens at boot and
 # owns the screen. The file also holds the Plex sign-in, so merge one line
 # instead of templating it, and only while Kodi is stopped (Kodi rewrites the

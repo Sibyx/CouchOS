@@ -42,12 +42,15 @@ kodi_addon_repo: https://mirrors.kodi.tv/addons/omega
 uxplay_version: 1.73.7
 airplay_name: CouchOS
 # -p: fixed legacy ports (TCP 7000,7001,7100 / UDP 6000,6001,7011)
-# -v4l2: hardware H.264 decode; -bt709: colour fix needed with GStreamer >= 1.22
+# -avdec -s 1280x720 -fps 30: software H.264 decode at 720p30.
+#   Hardware decode (-v4l2) crashes on the Pi 3 (verified 2026-11-21): the
+#   bcm2835-codec rejects the iPhone's mirror resolution ("buffer size mismatch
+#   sizeimage 1624320 < min size 1658880") and UxPlay segfaults.
 # The unit adds -dacp <file>: the file exists only while a client is connected,
 # and couchd watches it to hand the screen from Kodi to AirPlay and back.
 uxplay_args: >-
   -n {{ airplay_name }} -nh -p -nohold
-  -v4l2 -bt709 -vs kmssink -as pulsesink
+  -avdec -s 1280x720 -fps 30 -vs kmssink -as pulsesink
 
 # --- control plane -----------------------------------------------------------
 couchd_port: 8765

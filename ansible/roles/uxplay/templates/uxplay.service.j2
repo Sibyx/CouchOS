@@ -6,6 +6,8 @@ Wants=pipewire-pulse.socket
 StartLimitIntervalSec=0
 
 [Service]
+# A crash leaves the -dacp file behind, and couchd would keep Kodi off.
+ExecStartPre=-/usr/bin/rm -f %h/.uxplay.dacp
 ExecStart=/usr/local/bin/uxplay {{ uxplay_args }} -dacp %h/.uxplay.dacp
 Restart=always
 RestartSec=3

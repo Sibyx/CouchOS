@@ -12,6 +12,11 @@ __pycache__/
 .mcp.json
 .claude/settings.local.json
 
+# Xcode
+xcuserdata/
+DerivedData/
+*.xcuserstate
+
 # Ansible
 *.retry
 ansible/.vault-pass

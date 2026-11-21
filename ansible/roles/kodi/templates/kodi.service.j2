@@ -1,0 +1,14 @@
+[Unit]
+Description=Kodi (GBM) - CouchOS TV interface
+After=pipewire-pulse.socket wireplumber.service
+Wants=pipewire-pulse.socket wireplumber.service
+StartLimitIntervalSec=0
+
+[Service]
+ExecStart={{ kodi_binary }} --standalone --windowing=gbm --audio-backend={{ kodi_audio_backend }}
+Restart=always
+RestartSec=3
+TimeoutStopSec=20
+
+[Install]
+WantedBy=default.target

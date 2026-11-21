@@ -1,0 +1,43 @@
+# One PipeWire instance for the media user, shared by Kodi (pulse API),
+# UxPlay (pulsesink) and Bluetooth speakers (A2DP via WirePlumber).
+
+- name: Install PipeWire
+  ansible.builtin.apt:
+    name:
+      - pipewire
+      - pipewire-pulse
+      - wireplumber
+      - libspa-0.2-bluetooth
+      - pulseaudio-utils
+    state: present
+    install_recommends: false
+
+- name: Headless WirePlumber (no logind seat) with A2DP-only Bluetooth
+  ansible.builtin.copy:
+    dest: "{{ tv_home }}/.config/wireplumber/wireplumber.conf.d/50-couchos.conf"
+    owner: "{{ tv_user }}"
+    group: "{{ tv_user }}"
+    mode: "0644"
+    content: |
+      # No login session on an appliance: without this, WirePlumber never
+      # starts its Bluetooth monitor.
+      wireplumber.profiles = {
+        main = {
+          monitor.bluez.seat-monitoring = disabled
+        }
+      }
+      # A speaker, not a headset: never drop to the low-quality HFP profile.
+      wireplumber.settings = {
+        bluetooth.autoswitch-to-headset-profile = false
+      }
+  notify: Restart wireplumber
+
+- name: Start PipeWire for the media user
+  become_user: "{{ tv_user }}"
+  environment: "{{ tv_env }}"
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    scope: user
+    enabled: true
+    state: started
+  loop: [pipewire.socket, pipewire-pulse.socket, wireplumber.service]

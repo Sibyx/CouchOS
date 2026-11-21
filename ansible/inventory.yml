@@ -1,0 +1,12 @@
+# Home naming convention: flat mDNS names, beelzebub-<device>.local
+# (single-label .local names resolve on iOS, macOS and Linux, and keep
+# Bonjour/AirPlay services in the default "local." domain).
+#
+# The inventory name becomes the machine's hostname (mdns role).
+# First run on a fresh image (still named "couchos"):
+#   ansible-playbook site.yml -e ansible_host=192.168.1.68
+couchos:
+  hosts:
+    beelzebub-tv:
+      ansible_host: beelzebub-tv.local
+      ansible_user: jdubec

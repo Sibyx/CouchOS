@@ -1,0 +1,27 @@
+<!-- CouchOS: local HDD folders. Kodi owns this file after first run. -->
+<sources>
+    <video>
+        <default pathversion="1"></default>
+        <source>
+            <name>HDD Videos</name>
+            <path pathversion="1">{{ storage_mount }}/Videos/</path>
+            <allowsharing>true</allowsharing>
+        </source>
+    </video>
+    <music>
+        <default pathversion="1"></default>
+        <source>
+            <name>HDD Music</name>
+            <path pathversion="1">{{ storage_mount }}/Music/</path>
+            <allowsharing>true</allowsharing>
+        </source>
+    </music>
+    <pictures>
+        <default pathversion="1"></default>
+        <source>
+            <name>HDD Photos</name>
+            <path pathversion="1">{{ storage_mount }}/Photos/</path>
+            <allowsharing>true</allowsharing>
+        </source>
+    </pictures>
+</sources>

@@ -1,0 +1,24 @@
+- name: Refresh apt cache (the image ships without lists)
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install base tools
+  ansible.builtin.apt:
+    # acl: lets Ansible become the unprivileged media user
+    name: [acl, hd-idle, jq]
+    state: present
+    install_recommends: false
+
+- name: Kernel and network tunables
+  ansible.posix.sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    sysctl_file: /etc/sysctl.d/90-couchos.conf
+    reload: true
+  loop:
+    # rpi-swap sets up zram; swapping to compressed RAM is cheap, so prefer it
+    # over evicting Kodi's page cache.
+    - { name: vm.swappiness, value: "100" }
+    # Rootless podman (web UI as the tv user) binds port 80.
+    - { name: net.ipv4.ip_unprivileged_port_start, value: "{{ web_port }}" }

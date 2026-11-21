@@ -1,0 +1,61 @@
+- name: Skip storage when no HDD is configured
+  ansible.builtin.debug:
+    msg: "storage_device is empty - set it in group_vars/all.yml to use the HDD."
+  when: storage_device | length == 0
+
+- name: Storage
+  when: storage_device | length > 0
+  block:
+    - name: Check the HDD is attached
+      ansible.builtin.stat:
+        path: "{{ storage_device }}"
+      register: storage_dev
+      failed_when: not storage_dev.stat.exists
+
+    - name: Refuse to format without an explicit confirmation
+      ansible.builtin.assert:
+        that: storage_format_confirm == storage_device
+        fail_msg: >-
+          storage_format=true wipes {{ storage_device }}. Repeat the device path in
+          storage_format_confirm to proceed.
+      when: storage_format | bool
+
+    - name: Create ext4 filesystem (destructive)
+      community.general.filesystem:
+        dev: "{{ storage_device }}"
+        fstype: ext4
+        force: true
+        opts: "-L {{ storage_label }} -m 0 -T largefile"
+      when: storage_format | bool
+
+    - name: Mount the HDD (boot continues without it)
+      ansible.posix.mount:
+        path: "{{ storage_mount }}"
+        src: "LABEL={{ storage_label }}"
+        fstype: ext4
+        opts: noatime,nofail,x-systemd.device-timeout=10s
+        state: mounted
+
+    - name: Media folders (Kodi sources)
+      ansible.builtin.file:
+        path: "{{ storage_mount }}/{{ item }}"
+        state: directory
+        owner: "{{ tv_user }}"
+        group: "{{ tv_user }}"
+        mode: "0775"
+      loop: "{{ storage_dirs }}"
+
+    - name: Spin the HDD down when idle
+      ansible.builtin.copy:
+        dest: /etc/default/hd-idle
+        mode: "0644"
+        content: |
+          START_HD_IDLE=true
+          HD_IDLE_OPTS="-i 0 -a {{ storage_device }} -i {{ storage_spindown_seconds }}"
+      notify: Restart hd-idle
+
+    - name: Enable hd-idle
+      ansible.builtin.systemd_service:
+        name: hd-idle
+        enabled: true
+        state: started

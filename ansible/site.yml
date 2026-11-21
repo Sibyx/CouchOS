@@ -1,0 +1,14 @@
+- name: CouchOS appliance
+  hosts: couchos
+  become: true
+  roles:
+    - base
+    - mdns
+    - tv_user
+    - storage
+    - audio
+    - bluetooth
+    - kodi
+    - uxplay
+    - couchd
+    - web

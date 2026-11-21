@@ -1,0 +1,9 @@
+- name: Restart uxplay
+  become: true
+  become_user: "{{ tv_user }}"
+  environment: "{{ tv_env }}"
+  ansible.builtin.systemd_service:
+    name: uxplay.service
+    scope: user
+    daemon_reload: true
+    state: restarted

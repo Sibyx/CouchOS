@@ -1,0 +1,55 @@
+# CouchOS configuration. Everything the roles need is set here.
+
+# --- network / mDNS ----------------------------------------------------------
+# Hostname = inventory name (beelzebub-tv) -> beelzebub-tv.local
+mdns_interfaces: [eth0]
+
+# --- media user --------------------------------------------------------------
+# Kodi, UxPlay, PipeWire, couchd and the web container all run as this user's
+# systemd --user services (lingering, no login session).
+tv_user: tv
+
+# --- storage (1 TB HDD) ------------------------------------------------------
+# Find the device with:  ls -l /dev/disk/by-id/ | grep usb
+storage_device: ""            # e.g. /dev/disk/by-id/usb-WD_Elements_..-0:0
+storage_label: couchmedia
+storage_mount: /srv/media
+storage_dirs: [Videos, Music, Photos]
+# Formatting is destructive. It only runs when storage_format is true AND
+# storage_format_confirm repeats storage_device exactly:
+#   ansible-playbook site.yml -e storage_format=true -e storage_format_confirm=/dev/disk/by-id/...
+storage_format: false
+storage_format_confirm: ""
+storage_spindown_seconds: 600
+
+# --- Kodi --------------------------------------------------------------------
+# Raspberry Pi archive build (Pi-patched V4L2/DRM-PRIME decode).
+# On 2026-11-21 the archive had kodi 21.3+rpt3 and kodi22 22.0~beta2+rpt1.
+# To try Kodi 22: kodi_package: kodi22, and point kodi_binary at its launcher
+# (check on the Pi with: dpkg -L kodi22 | grep bin/).
+kodi_package: kodi
+kodi_binary: /usr/bin/kodi
+kodi_audio_backend: pulseaudio   # PipeWire's pulse server
+kodi_webserver_port: 8080
+kodi_autostart_addon: script.plexmod
+
+# PM4K (PlexMod for Kodi). The upstream tags are stale; this is the
+# develop_kodi21 head on 2026-11-07 (addon version 1.14.1-beta1).
+pm4k_ref: 8e725ffaa4661770aaf32da01f6b1b534d59e9d0
+kodi_addon_repo: https://mirrors.kodi.tv/addons/omega
+
+# --- AirPlay (UxPlay) --------------------------------------------------------
+uxplay_version: 1.73.7
+airplay_name: CouchOS
+# -p: fixed legacy ports (TCP 7000,7001,7100 / UDP 6000,6001,7011)
+# -v4l2: hardware H.264 decode; -bt709: colour fix needed with GStreamer >= 1.22
+# The unit adds -dacp <file>: the file exists only while a client is connected,
+# and couchd watches it to hand the screen from Kodi to AirPlay and back.
+uxplay_args: >-
+  -n {{ airplay_name }} -nh -p -nohold
+  -v4l2 -bt709 -vs kmssink -as pulsesink
+
+# --- control plane -----------------------------------------------------------
+couchd_port: 8765
+web_port: 80
+caddy_image: docker.io/library/caddy:2.10-alpine

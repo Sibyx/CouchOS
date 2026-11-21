@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#101214">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="CouchOS">
+<title>CouchOS</title>
+<style>
+  :root {
+    --bg: #101214; --panel: #1a1d21; --line: #2a2e34; --text: #e8e6e3; --muted: #8b9098;
+    --accent: #e5a00d; --accent-text: #1a1300; --ok: #5fb878; --bad: #e0605a;
+    --radius: 14px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f3f1ed; --panel: #ffffff; --line: #e2ded6; --text: #1d1f22; --muted: #6b6f76;
+      --accent: #c98a00; --accent-text: #ffffff;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body {
+    font: 15px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+    max-width: 520px; margin: 0 auto; -webkit-tap-highlight-color: transparent;
+  }
+  header { display: flex; align-items: baseline; justify-content: space-between; margin: 4px 2px 16px; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -0.02em; }
+  h1 span { color: var(--accent); }
+  .conn { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; margin-bottom: 12px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+  .now { font-size: 17px; font-weight: 600; min-height: 1.4em; }
+  .sub { color: var(--muted); font-size: 13px; }
+  .bar { height: 4px; background: var(--line); border-radius: 2px; margin-top: 10px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .5s; }
+  .seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
+  button {
+    font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
+    border-radius: 10px; padding: 11px 8px; min-height: 44px; cursor: pointer; touch-action: manipulation;
+  }
+  button:active { transform: scale(0.97); }
+  button.on { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+  button:disabled { opacity: .45; }
+  .pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; max-width: 300px; margin: 0 auto 10px; }
+  .pad button { aspect-ratio: 1.35; font-size: 20px; }
+  .pad .ok { border-radius: 50%; aspect-ratio: 1; background: var(--line); font-size: 15px; font-weight: 600; }
+  .vol { display: flex; align-items: center; gap: 8px; }
+  .vol output { min-width: 4.5em; text-align: center; font-variant-numeric: tabular-nums; }
+  ul { list-style: none; padding: 0; margin: 0; }
+  li { display: flex; align-items: center; gap: 8px; padding: 9px 0; border-top: 1px solid var(--line); }
+  li:first-child { border-top: 0; }
+  li .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  li button { flex: 0 0 auto; padding: 7px 12px; min-height: 36px; font-size: 14px; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; }
+  .stats b { display: block; font-size: 17px; font-variant-numeric: tabular-nums; }
+  .stats span { font-size: 12px; color: var(--muted); }
+  #toast {
+    position: fixed; left: 50%; bottom: max(20px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+    background: var(--text); color: var(--bg); padding: 9px 14px; border-radius: 10px; font-size: 14px;
+    opacity: 0; transition: opacity .2s; pointer-events: none; max-width: calc(100% - 32px);
+  }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Couch<span>OS</span></h1>
+  <div class="conn"><i class="dot" id="dot"></i><span id="conn">connecting…</span></div>
+</header>
+
+<section>
+  <h2>Now on TV</h2>
+  <div class="now" id="now">—</div>
+  <div class="sub" id="nowsub"></div>
+  <div class="bar"><i id="progress"></i></div>
+</section>
+
+<section>
+  <h2>Screen</h2>
+  <div class="seg" id="modes">
+    <button data-mode="kodi">Plex</button>
+    <button data-mode="airplay">AirPlay</button>
+    <button data-mode="idle">Off</button>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <button data-tv="on">TV on</button>
+    <button data-tv="standby">TV standby</button>
+  </div>
+</section>
+
+<section>
+  <h2>Remote</h2>
+  <div class="pad">
+    <button data-key="back" aria-label="Back">↩</button>
+    <button data-key="up" aria-label="Up">▲</button>
+    <button data-key="menu" aria-label="Menu">☰</button>
+    <button data-key="left" aria-label="Left">◀</button>
+    <button data-key="select" class="ok">OK</button>
+    <button data-key="right" aria-label="Right">▶</button>
+    <button data-key="home" aria-label="Home">⌂</button>
+    <button data-key="down" aria-label="Down">▼</button>
+    <button data-key="info" aria-label="Info">ⓘ</button>
+  </div>
+  <div class="row">
+    <button data-key="rewind" aria-label="Rewind">⏪</button>
+    <button data-key="playpause" aria-label="Play or pause">⏯</button>
+    <button data-key="stop" aria-label="Stop">⏹</button>
+    <button data-key="forward" aria-label="Forward">⏩</button>
+  </div>
+</section>
+
+<section>
+  <h2>Sound <span class="sub" id="sink" style="text-transform:none;letter-spacing:0"></span></h2>
+  <div class="vol">
+    <button data-vol="-5" aria-label="Volume down">−</button>
+    <output id="vol">—</output>
+    <button data-vol="5" aria-label="Volume up">+</button>
+    <button id="mute">Mute</button>
+  </div>
+</section>
+
+<section>
+  <h2>Bluetooth speakers</h2>
+  <ul id="bt"><li class="sub">No devices yet.</li></ul>
+  <button id="scan" style="width:100%;margin-top:8px">Scan for speakers</button>
+</section>
+
+<section>
+  <h2>System</h2>
+  <div class="stats">
+    <div><b id="temp">—</b><span>°C</span></div>
+    <div><b id="mem">—</b><span>MB free</span></div>
+    <div><b id="up">—</b><span>uptime</span></div>
+  </div>
+  <div class="row" style="margin-top:10px">
+    <button data-sys="reboot">Reboot</button>
+    <button id="kodirestart">Restart Kodi</button>
+  </div>
+</section>
+
+<div id="toast" role="status"></div>
+
+<script>
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => document.querySelectorAll(sel);
+let muted = false;
+
+async function api(path, body) {
+  const opts = body === undefined ? {} : {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  };
+  const res = await fetch("/api/" + path, opts);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+
+function toast(msg) {
+  const t = $("#toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => t.classList.remove("show"), 2600);
+}
+
+async function act(fn, ok) {
+  try { const r = await fn(); if (ok) toast(ok); return r; }
+  catch (e) { toast(e.message); }
+}
+
+function fmtUptime(s) {
+  const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+  return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
+}
+
+function renderStatus(s) {
+  $$("#modes button").forEach((b) => b.classList.toggle("on", b.dataset.mode === s.mode));
+  const p = s.kodi.playing;
+  if (s.mode === "airplay") {
+    $("#now").textContent = s.airplay.connected ? "AirPlay mirroring" : "Waiting for AirPlay";
+    $("#nowsub").textContent = "Choose “CouchOS” in Screen Mirroring on your iPhone";
+    $("#progress").style.width = "0";
+  } else if (p) {
+    $("#now").textContent = p.show ? `${p.show}` : p.title || "Playing";
+    const ep = p.season != null ? `S${String(p.season).padStart(2, "0")}E${String(p.episode).padStart(2, "0")} · ${p.title}` : (p.artist || "");
+    $("#nowsub").textContent = (p.paused ? "Paused · " : "") + ep;
+    $("#progress").style.width = p.progress + "%";
+  } else {
+    $("#now").textContent = s.mode === "idle" ? "Screen off" : s.kodi.running ? "Plex" : "Starting…";
+    $("#nowsub").textContent = s.kodi.running ? "Nothing playing" : "";
+    $("#progress").style.width = "0";
+  }
+  $("#temp").textContent = s.system.temp_c ?? "—";
+  $("#mem").textContent = s.system.mem_available_mb;
+  $("#up").textContent = fmtUptime(s.system.uptime_s);
+}
+
+function renderAudio(a) {
+  muted = a.muted;
+  $("#vol").textContent = a.volume == null ? "—" : (a.muted ? "muted" : a.volume + "%");
+  $("#mute").classList.toggle("on", a.muted);
+  $("#sink").textContent = a.sink ? "· " + a.sink : "";
+}
+
+function renderBluetooth(b) {
+  $("#scan").disabled = b.scanning;
+  $("#scan").textContent = b.scanning ? "Scanning…" : "Scan for speakers";
+  const list = $("#bt");
+  list.replaceChildren();
+  const devices = b.devices.filter((d) => d.audio || d.paired);
+  if (!devices.length) {
+    const li = document.createElement("li");
+    li.className = "sub";
+    li.textContent = b.scanning ? "Looking… put the speaker in pairing mode." : "No speakers yet. Scan to find one.";
+    list.append(li);
+    return;
+  }
+  for (const d of devices) {
+    const li = document.createElement("li");
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = d.name + (d.connected ? " · connected" : "");
+    li.append(name);
+    const add = (label, action) => {
+      const btn = document.createElement("button");
+      btn.textContent = label;
+      btn.onclick = () => act(() => api("bluetooth/" + action, { mac: d.mac }), label + ": done").then(refreshBt);
+      li.append(btn);
+    };
+    if (!d.paired) add("Pair", "pair");
+    else if (d.connected) add("Disconnect", "disconnect");
+    else add("Connect", "connect");
+    if (d.paired) add("Forget", "remove");
+    list.append(li);
+  }
+}
+
+async function refresh() {
+  try {
+    renderStatus(await api("status"));
+    $("#dot").className = "dot ok";
+    $("#conn").textContent = "online";
+  } catch {
+    $("#dot").className = "dot bad";
+    $("#conn").textContent = "offline";
+  }
+}
+const refreshAudio = () => api("audio").then(renderAudio).catch(() => {});
+const refreshBt = () => api("bluetooth").then(renderBluetooth).catch(() => {});
+
+$$("[data-mode]").forEach((b) => b.onclick = () => act(() => api("mode", { mode: b.dataset.mode })).then((s) => s && renderStatus(s)));
+$$("[data-tv]").forEach((b) => b.onclick = () => act(() => api("tv", { power: b.dataset.tv }), "Sent to TV"));
+$$("[data-key]").forEach((b) => b.onclick = () => act(() => api("kodi/input", { action: b.dataset.key })));
+$$("[data-vol]").forEach((b) => b.onclick = () => act(() => api("audio", { delta: Number(b.dataset.vol) })).then((a) => a && renderAudio(a)));
+$("#mute").onclick = () => act(() => api("audio", { mute: !muted })).then((a) => a && renderAudio(a));
+$("#scan").onclick = () => act(() => api("bluetooth/scan", {})).then(() => {
+  refreshBt();
+  const poll = setInterval(refreshBt, 3000);
+  setTimeout(() => clearInterval(poll), 20000);
+});
+$("#kodirestart").onclick = () => act(() => api("kodi/restart", {}), "Kodi restarting");
+$$("[data-sys]").forEach((b) => b.onclick = () => {
+  if (b.dataset.armed) { act(() => api("system/" + b.dataset.sys, {}), "Rebooting…"); return; }
+  b.dataset.armed = "1"; b.textContent = "Tap again to reboot";
+  setTimeout(() => { delete b.dataset.armed; b.textContent = "Reboot"; }, 3000);
+});
+
+refresh(); refreshAudio(); refreshBt();
+setInterval(refresh, 3000);
+setInterval(refreshAudio, 10000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { refresh(); refreshAudio(); refreshBt(); } });
+</script>
+</body>
+</html>

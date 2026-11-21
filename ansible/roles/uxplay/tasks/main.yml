@@ -1,0 +1,56 @@
+# UxPlay built from source on the Mac (uxplay/build.sh), not Debian's 1.71.1
+# (CVE-2025-60458). Build it before running this role.
+
+- name: Locate the UxPlay build
+  ansible.builtin.set_fact:
+    uxplay_dist: "{{ playbook_dir }}/../uxplay/dist/uxplay-{{ uxplay_version }}-trixie-arm64"
+
+- name: Check the UxPlay build exists
+  delegate_to: localhost
+  become: false
+  ansible.builtin.stat:
+    path: "{{ uxplay_dist }}.tar.gz"
+  register: uxplay_tarball
+  failed_when: not uxplay_tarball.stat.exists
+
+- name: UxPlay runtime libraries and GStreamer plugins
+  ansible.builtin.apt:
+    name: "{{ lookup('file', uxplay_dist ~ '.DEPENDS').split() + uxplay_gst_plugins }}"
+    state: present
+    install_recommends: false
+  vars:
+    uxplay_gst_plugins:
+      - gstreamer1.0-plugins-base
+      # v4l2h264dec, v4l2convert, pulsesink
+      - gstreamer1.0-plugins-good
+      # kmssink, h264parse
+      - gstreamer1.0-plugins-bad
+      # software decoder fallback (-avdec)
+      - gstreamer1.0-libav
+
+- name: Install UxPlay
+  ansible.builtin.unarchive:
+    src: "{{ uxplay_dist }}.tar.gz"
+    dest: /
+    owner: root
+    group: root
+  notify: Restart uxplay
+
+- name: UxPlay user service
+  ansible.builtin.template:
+    src: uxplay.service.j2
+    dest: "{{ tv_home }}/.config/systemd/user/uxplay.service"
+    owner: "{{ tv_user }}"
+    group: "{{ tv_user }}"
+    mode: "0644"
+  notify: Restart uxplay
+
+- name: Start UxPlay
+  become_user: "{{ tv_user }}"
+  environment: "{{ tv_env }}"
+  ansible.builtin.systemd_service:
+    name: uxplay.service
+    scope: user
+    daemon_reload: true
+    enabled: true
+    state: started

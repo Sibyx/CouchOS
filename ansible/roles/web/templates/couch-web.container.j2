@@ -1,0 +1,19 @@
+[Unit]
+Description=CouchOS web UI (Caddy)
+After=couchd.service
+
+[Container]
+Image={{ caddy_image }}
+ContainerName=couch-web
+# Host network: Caddy reaches couchd on 127.0.0.1 and serves port {{ web_port }} on the LAN.
+Network=host
+Volume=/opt/couchos/web:/srv:ro
+Volume=/opt/couchos/Caddyfile:/etc/caddy/Caddyfile:ro
+AutoUpdate=registry
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

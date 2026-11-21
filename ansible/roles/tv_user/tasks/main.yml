@@ -1,0 +1,71 @@
+# Per-user D-Bus for PipeWire, WirePlumber and rootless podman (also in the image).
+- name: User session bus
+  ansible.builtin.apt:
+    name: [dbus-user-session, libpam-systemd]
+    state: present
+    install_recommends: false
+
+- name: Media user
+  ansible.builtin.user:
+    name: "{{ tv_user }}"
+    comment: CouchOS media session
+    shell: /usr/sbin/nologin
+    password: "*"
+    groups: [video, render, input, audio, plugdev, bluetooth]
+    append: true
+  register: tv_account
+
+- name: Remember the media user's uid and home
+  ansible.builtin.set_fact:
+    tv_uid: "{{ tv_account.uid }}"
+    tv_home: "{{ tv_account.home }}"
+    tv_env:
+      XDG_RUNTIME_DIR: "/run/user/{{ tv_account.uid }}"
+      DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ tv_account.uid }}/bus"
+
+- name: Rootless podman id ranges
+  ansible.builtin.lineinfile:
+    path: "{{ item }}"
+    regexp: "^{{ tv_user }}:"
+    line: "{{ tv_user }}:200000:65536"
+    create: true
+    mode: "0644"
+  loop: [/etc/subuid, /etc/subgid]
+
+- name: Keep the user's systemd running without a login (linger)
+  ansible.builtin.command: loginctl enable-linger {{ tv_user }}
+  args:
+    creates: /var/lib/systemd/linger/{{ tv_user }}
+
+- name: Wait for the user's systemd instance
+  ansible.builtin.wait_for:
+    path: /run/user/{{ tv_uid }}/bus
+    timeout: 60
+
+- name: Allow couchd (as the media user) to reboot and power off
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/020_{{ tv_user }}-power
+    mode: "0440"
+    validate: visudo -cf %s
+    content: |
+      {{ tv_user }} ALL=(root) NOPASSWD: /usr/bin/systemctl reboot, /usr/bin/systemctl poweroff
+
+# Listed parent-first: the file module would create missing parents as root.
+- name: User-owned config directories
+  ansible.builtin.file:
+    path: "{{ tv_home }}/{{ item }}"
+    state: directory
+    owner: "{{ tv_user }}"
+    group: "{{ tv_user }}"
+    mode: "0755"
+  loop:
+    - .config
+    - .config/systemd
+    - .config/systemd/user
+    - .config/containers
+    - .config/containers/systemd
+    - .config/wireplumber
+    - .config/wireplumber/wireplumber.conf.d
+    - .kodi
+    - .kodi/addons
+    - .kodi/userdata

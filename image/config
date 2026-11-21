@@ -1,0 +1,30 @@
+# pi-gen configuration for the CouchOS base image (Raspberry Pi 3B+, arm64).
+# image/build.sh copies this file into pi-gen/ and appends the generated values
+# (SSH keys, throwaway first-user password, git hash). Do not put secrets here.
+
+IMG_NAME=couchos
+PI_GEN_RELEASE="CouchOS base"
+RELEASE=trixie
+DEPLOY_COMPRESSION=xz
+COMPRESSION_LEVEL=6
+
+# Home convention: beelzebub-<device>.local (Ansible enforces it too).
+TARGET_HOSTNAME=beelzebub-tv
+LOCALE_DEFAULT=en_US.UTF-8
+KEYBOARD_KEYMAP=us
+KEYBOARD_LAYOUT="English (US)"
+TIMEZONE_DEFAULT=Europe/Bratislava
+
+# Admin account: key-only SSH, passwordless sudo, password locked in stage-couchos.
+FIRST_USER_NAME=jdubec
+DISABLE_FIRST_BOOT_USER_RENAME=1
+PASSWORDLESS_SUDO=1
+ENABLE_SSH=1
+PUBKEY_ONLY_SSH=1
+
+# Ansible owns configuration after first boot; no cloud-init.
+ENABLE_CLOUD_INIT=0
+
+# Stock bootstrap (stage0) and minimal bootable system (stage1), then our own
+# lean stage instead of the stock "Lite" stage2.
+STAGE_LIST="/pi-gen/stage0 /pi-gen/stage1 /pi-gen/stage-couchos"

@@ -1,0 +1,103 @@
+- name: Install Kodi (Raspberry Pi archive build)
+  ansible.builtin.apt:
+    name: "{{ kodi_package }}"
+    state: present
+    install_recommends: false
+
+- name: Keep the login prompt off the TV (Kodi owns the screen)
+  ansible.builtin.systemd_service:
+    name: getty@tty1.service
+    enabled: false
+    state: stopped
+
+- name: First-run settings (only if Kodi has no settings yet)
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "{{ tv_home }}/.kodi/userdata/{{ item }}"
+    owner: "{{ tv_user }}"
+    group: "{{ tv_user }}"
+    mode: "0644"
+    force: false
+  loop: [guisettings.xml, sources.xml]
+
+- name: Advanced settings
+  ansible.builtin.template:
+    src: advancedsettings.xml.j2
+    dest: "{{ tv_home }}/.kodi/userdata/advancedsettings.xml"
+    owner: "{{ tv_user }}"
+    group: "{{ tv_user }}"
+    mode: "0644"
+  notify: Restart kodi
+
+- name: CouchOS Kodi add-on
+  ansible.builtin.copy:
+    src: service.couchos/
+    dest: "{{ tv_home }}/.kodi/addons/service.couchos/"
+    owner: "{{ tv_user }}"
+    group: "{{ tv_user }}"
+    mode: "0644"
+    directory_mode: "0755"
+  notify: Restart kodi
+
+- name: CouchOS Kodi add-on autostart
+  ansible.builtin.template:
+    src: service.py.j2
+    dest: "{{ tv_home }}/.kodi/addons/service.couchos/service.py"
+    owner: "{{ tv_user }}"
+    group: "{{ tv_user }}"
+    mode: "0644"
+  notify: Restart kodi
+
+- name: Add-on installer
+  ansible.builtin.copy:
+    src: kodi-addons.py
+    dest: /usr/local/libexec/couchos/
+    mode: "0755"
+
+- name: Install PM4K and its dependencies
+  become_user: "{{ tv_user }}"
+  ansible.builtin.command:
+    argv:
+      - /usr/local/libexec/couchos/kodi-addons.py
+      - install
+      - --addons-dir={{ tv_home }}/.kodi/addons
+      - --repo={{ kodi_addon_repo }}
+      - --pm4k-ref={{ pm4k_ref }}
+  register: pm4k_install
+  changed_when: (pm4k_install.stdout | from_json).changed
+  notify: Restart kodi
+
+- name: Kodi user service
+  ansible.builtin.template:
+    src: kodi.service.j2
+    dest: "{{ tv_home }}/.config/systemd/user/kodi.service"
+    owner: "{{ tv_user }}"
+    group: "{{ tv_user }}"
+    mode: "0644"
+  notify: Restart kodi
+
+- name: Start Kodi
+  become_user: "{{ tv_user }}"
+  environment: "{{ tv_env }}"
+  ansible.builtin.systemd_service:
+    name: kodi.service
+    scope: user
+    daemon_reload: true
+    enabled: true
+    state: started
+
+- name: Apply pending Kodi restarts before enabling add-ons
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable PM4K, its dependencies and the CouchOS add-on
+  become_user: "{{ tv_user }}"
+  ansible.builtin.command:
+    argv:
+      - /usr/local/libexec/couchos/kodi-addons.py
+      - enable
+      - --addons-dir={{ tv_home }}/.kodi/addons
+      - --jsonrpc=http://127.0.0.1:{{ kodi_webserver_port }}/jsonrpc
+      - --extra
+      - service.couchos
+  register: pm4k_enable
+  changed_when: (pm4k_enable.stdout | from_json).changed

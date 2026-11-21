@@ -1,0 +1,41 @@
+# Hostname and mDNS: <inventory_hostname>.local via Avahi, on the wired LAN only.
+
+- name: mDNS tools
+  ansible.builtin.apt:
+    name: [avahi-daemon, avahi-utils, libnss-mdns]
+    state: present
+    install_recommends: false
+
+- name: Hostname
+  ansible.builtin.hostname:
+    name: "{{ inventory_hostname }}"
+  notify: Restart avahi
+
+- name: Hostname resolves locally
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^127\.0\.1\.1\s'
+    line: "127.0.1.1\t{{ inventory_hostname }}"
+
+- name: Avahi settings
+  community.general.ini_file:
+    path: /etc/avahi/avahi-daemon.conf
+    section: "{{ item.section }}"
+    option: "{{ item.option }}"
+    value: "{{ item.value }}"
+    no_extra_spaces: true
+    mode: "0644"
+  loop:
+    - { section: server, option: host-name, value: "{{ inventory_hostname }}" }
+    - { section: server, option: domain-name, value: local }
+    # Announce on the LAN only, never on podman/virtual interfaces.
+    - { section: server, option: allow-interfaces, value: "{{ mdns_interfaces | join(',') }}" }
+    # Only the services CouchOS declares (web UI, API, Kodi, AirPlay).
+    - { section: publish, option: publish-workstation, value: "no" }
+  notify: Restart avahi
+
+- name: Avahi running
+  ansible.builtin.systemd_service:
+    name: avahi-daemon
+    enabled: true
+    state: started

@@ -1,0 +1,31 @@
+# CouchOS - Raspberry Pi 3B+ media appliance
+# Reference: https://www.raspberrypi.com/documentation/computers/config_txt.html
+# config.txt has no trailing comments: every comment sits on its own line.
+
+arm_64bit=1
+arm_boost=1
+auto_initramfs=1
+disable_splash=1
+boot_delay=0
+
+# KMS display driver (Kodi GBM and UxPlay kmssink both render through it).
+# 256 MB CMA covers the Kodi GUI buffers plus V4L2 decode and scaler buffers.
+dtoverlay=vc4-kms-v3d,cma-256
+max_framebuffers=2
+disable_fw_kms_setup=1
+disable_overscan=1
+
+# The Pi 3 H.264 decoder (bcm2835-codec, /dev/video10) runs in VideoCore
+# firmware and allocates from gpu_mem, not from CMA.
+gpu_mem=128
+
+# Hardware CouchOS does not use.
+# 3.5 mm jack off: audio goes to HDMI (vc4-hdmi) or Bluetooth.
+dtparam=audio=off
+# Wired network only. Bluetooth (same chip, UART) stays on for speakers.
+dtoverlay=disable-wifi
+camera_auto_detect=0
+display_auto_detect=0
+
+# If 50/60 fps H.264 stutters or drifts out of A/V sync, LibreELEC recommends:
+#core_freq_min=500

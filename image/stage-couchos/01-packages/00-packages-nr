@@ -1,0 +1,10 @@
+ssh sudo less bash-completion
+dbus-user-session libpam-systemd
+raspberrypi-sys-mods raspi-utils rpi-swap
+network-manager avahi-daemon libnss-mdns
+ca-certificates curl rsync htop ethtool usbutils
+dosfstools e2fsprogs parted
+python3 python3-apt
+v4l-utils
+bluez bluez-firmware rfkill
+podman crun conmon netavark aardvark-dns passt uidmap catatonit

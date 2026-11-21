@@ -1,0 +1,17 @@
+<!-- CouchOS first-run settings. Kodi merges these with its defaults and then
+     owns the file, so Ansible only writes it when it does not exist yet. -->
+<settings version="2">
+    <!-- JSON-RPC for couchd and remote apps (official Kodi remote, Kore). Trusted LAN: no auth. -->
+    <setting id="services.webserver">true</setting>
+    <setting id="services.webserverport">{{ kodi_webserver_port }}</setting>
+    <setting id="services.webserverauthentication">false</setting>
+    <setting id="services.esenabled">true</setting>
+    <setting id="services.esallinterfaces">true</setting>
+    <!-- Announce Kodi over Bonjour so phone remotes find it. -->
+    <setting id="services.zeroconf">true</setting>
+    <setting id="services.upnpserver">false</setting>
+    <setting id="services.upnprenderer">false</setting>
+    <!-- Switch the TV to the film's frame rate (24p/25p) for smooth playback. -->
+    <setting id="videoplayer.adjustrefreshrate">2</setting>
+    <setting id="screensaver.mode">screensaver.xbmc.builtin.dim</setting>
+</settings>

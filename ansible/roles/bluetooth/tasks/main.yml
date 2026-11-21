@@ -1,0 +1,23 @@
+# Bluetooth for speakers (e.g. JBL). Pairing is done from the web UI / API.
+
+- name: Bluetooth adapter settings
+  community.general.ini_file:
+    path: /etc/bluetooth/main.conf
+    section: "{{ item.section }}"
+    option: "{{ item.option }}"
+    value: "{{ item.value }}"
+    no_extra_spaces: false
+    mode: "0644"
+  loop:
+    - { section: General, option: Name, value: "{{ airplay_name }}" }
+    - { section: General, option: FastConnectable, value: "true" }
+    - { section: General, option: JustWorksRepairing, value: always }
+    - { section: Policy, option: AutoEnable, value: "true" }
+    - { section: Policy, option: ReconnectAttempts, value: "7" }
+  notify: Restart bluetooth
+
+- name: Bluetooth service
+  ansible.builtin.systemd_service:
+    name: bluetooth
+    enabled: true
+    state: started

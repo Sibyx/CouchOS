@@ -1,0 +1,47 @@
+# Web UI: static page + reverse proxy to couchd, in a rootless podman
+# container (quadlet) of the media user.
+
+- name: Web UI files
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../web/"
+    dest: /opt/couchos/web/
+    mode: "0644"
+    directory_mode: "0755"
+  notify: Restart couch-web
+
+- name: Caddy config
+  ansible.builtin.template:
+    src: Caddyfile.j2
+    dest: /opt/couchos/Caddyfile
+    mode: "0644"
+  notify: Restart couch-web
+
+- name: Quadlet for the web container
+  ansible.builtin.template:
+    src: couch-web.container.j2
+    dest: "{{ tv_home }}/.config/containers/systemd/couch-web.container"
+    owner: "{{ tv_user }}"
+    group: "{{ tv_user }}"
+    mode: "0644"
+  notify: Restart couch-web
+
+- name: Pull the Caddy image (slow on a Pi; keeps the first start fast)
+  become_user: "{{ tv_user }}"
+  environment: "{{ tv_env }}"
+  containers.podman.podman_image:
+    name: "{{ caddy_image }}"
+
+- name: Start the web container
+  become_user: "{{ tv_user }}"
+  environment: "{{ tv_env }}"
+  ansible.builtin.systemd_service:
+    name: couch-web.service
+    scope: user
+    daemon_reload: true
+    state: started
+
+- name: Advertise the web UI and API over Bonjour
+  ansible.builtin.template:
+    src: couchos.service.xml.j2
+    dest: /etc/avahi/services/couchos.service
+    mode: "0644"

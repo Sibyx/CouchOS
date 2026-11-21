@@ -1,0 +1,16 @@
+[Unit]
+Description=couchd - CouchOS control daemon (display arbiter, CEC, Bluetooth, API)
+After=pipewire-pulse.socket wireplumber.service
+StartLimitIntervalSec=0
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/couchos/couchd/couchd.py
+Environment=COUCHD_PORT={{ couchd_port }}
+Environment=COUCHD_KODI_RPC=http://127.0.0.1:{{ kodi_webserver_port }}/jsonrpc
+Environment=COUCHD_DACP_FILE=%h/.uxplay.dacp
+Environment=COUCHD_OSD_NAME={{ airplay_name }}
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

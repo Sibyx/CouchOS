@@ -1,0 +1,17 @@
+<?xml version="1.0" standalone='no'?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<!-- Managed by Ansible. Lets browsers and the future iOS app find CouchOS. -->
+<service-group>
+  <name replace-wildcards="yes">CouchOS on %h</name>
+  <service>
+    <type>_http._tcp</type>
+    <port>{{ web_port }}</port>
+    <txt-record>path=/</txt-record>
+  </service>
+  <service>
+    <type>_couchos._tcp</type>
+    <port>{{ couchd_port }}</port>
+    <txt-record>api=/api</txt-record>
+    <txt-record>version=1</txt-record>
+  </service>
+</service-group>

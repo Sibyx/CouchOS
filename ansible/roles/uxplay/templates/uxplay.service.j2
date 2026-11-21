@@ -1,0 +1,14 @@
+[Unit]
+Description=UxPlay AirPlay receiver - CouchOS
+# Kodi takes the display first; couchd hands it over while a client is connected.
+After=kodi.service pipewire-pulse.socket
+Wants=pipewire-pulse.socket
+StartLimitIntervalSec=0
+
+[Service]
+ExecStart=/usr/local/bin/uxplay {{ uxplay_args }} -dacp %h/.uxplay.dacp
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

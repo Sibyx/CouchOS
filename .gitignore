@@ -1,0 +1,26 @@
+# Build output (images from image/build.sh, UxPlay bundle from uxplay/build.sh)
+/out/
+/uxplay/dist/
+
+# pi-gen lives in ~/.cache/couchos; never vendor it here
+/pi-gen/
+
+# Local tooling
+.venv/
+__pycache__/
+*.py[cod]
+.mcp.json
+.claude/settings.local.json
+
+# Ansible
+*.retry
+ansible/.vault-pass
+
+# Leftover from another project (nothing builds from the repo root)
+/.dockerignore
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store

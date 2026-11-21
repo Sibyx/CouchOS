@@ -1,0 +1,12 @@
+<!-- CouchOS: tuned for a 1 GB Raspberry Pi 3B+. Managed by Ansible. -->
+<advancedsettings version="1.0">
+    <cache>
+        <!-- Kodi uses up to 3x this in RAM: 40 MB -> ~120 MB. -->
+        <memorysize>41943040</memorysize>
+        <buffermode>1</buffermode>
+        <readfactor>4</readfactor>
+    </cache>
+    <!-- Smaller artwork textures: less GPU memory and faster Plex browsing. -->
+    <imageres>540</imageres>
+    <fanartres>720</fanartres>
+</advancedsettings>

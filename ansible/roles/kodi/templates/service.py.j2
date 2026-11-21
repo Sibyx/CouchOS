@@ -1,0 +1,12 @@
+# Opens the configured add-on (the Plex client) once Kodi has started, so the
+# TV shows Plex as soon as it is switched to this HDMI input.
+import xbmc
+
+AUTOSTART = "{{ kodi_autostart_addon }}"
+
+monitor = xbmc.Monitor()
+if AUTOSTART and not monitor.waitForAbort(3):
+    if xbmc.getCondVisibility("System.HasAddon(%s)" % AUTOSTART):
+        xbmc.executebuiltin("RunAddon(%s)" % AUTOSTART)
+    else:
+        xbmc.log("service.couchos: %s is not installed" % AUTOSTART, xbmc.LOGWARNING)

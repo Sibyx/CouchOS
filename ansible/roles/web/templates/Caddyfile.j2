@@ -1,0 +1,15 @@
+{
+	admin off
+	auto_https off
+}
+
+:{{ web_port }} {
+	encode gzip
+	handle /api/* {
+		reverse_proxy 127.0.0.1:{{ couchd_port }}
+	}
+	handle {
+		root * /srv
+		file_server
+	}
+}

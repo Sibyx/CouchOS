@@ -58,9 +58,8 @@ struct OK: Decodable {}
 
 struct Status: Decodable {
     struct Kodi: Decodable { let running: Bool }
-    struct AirPlay: Decodable { let running: Bool; let connected: Bool }
-    struct System: Decodable { let tempC: Double?; let memAvailableMb: Int }
-    let mode: String
+    struct AirPlay: Decodable { let running: Bool; let active: Bool }
+    struct System: Decodable { let tempC: Double?; let memAvailableMb: Int; let throttled: String? }
     let kodi: Kodi
     let airplay: AirPlay
     let system: System

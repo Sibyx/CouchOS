@@ -31,7 +31,7 @@ kodi_package: kodi
 kodi_binary: /usr/bin/kodi
 kodi_audio_backend: pulseaudio   # PipeWire's pulse server
 kodi_webserver_port: 8080
-kodi_autostart_addon: script.plexmod
+pm4k_settings: "/home/{{ tv_user }}/.kodi/userdata/addon_data/script.plexmod/settings.xml"
 
 # PM4K (PlexMod for Kodi). The upstream tags are stale; this is the
 # develop_kodi21 head on 2026-11-07 (addon version 1.14.1-beta1).
@@ -42,17 +42,23 @@ kodi_addon_repo: https://mirrors.kodi.tv/addons/omega
 uxplay_version: 1.73.7
 airplay_name: CouchOS
 # -p: fixed legacy ports (TCP 7000,7001,7100 / UDP 6000,6001,7011)
-# -avdec -s 1280x720 -fps 30: software H.264 decode at 720p30.
-#   Hardware decode (-v4l2) crashes on the Pi 3 (verified 2026-11-21): the
-#   bcm2835-codec rejects the iPhone's mirror resolution ("buffer size mismatch
-#   sizeimage 1624320 < min size 1658880") and UxPlay segfaults.
+# Forward-only: -vrtp/-artp send the decrypted streams to airplay-bridge and
+# Kodi plays them. UxPlay's own rendering is not used: its GStreamer V4L2
+# decode crashed on the Pi 3 (bcm2835-codec "buffer size mismatch" on the
+# iPhone's mirror size), while Kodi's ffmpeg V4L2 path handles 1920x886,
+# portrait and rotation (verified 2026-11-21), and Kodi keeps the screen.
 # The unit adds -dacp <file>: the file exists only while a client is connected,
 # and couchd watches it to hand the screen from Kodi to AirPlay and back.
 uxplay_args: >-
   -n {{ airplay_name }} -nh -p -nohold
-  -avdec -s 1280x720 -fps 30 -vs kmssink -as pulsesink
+  -vrtp "config-interval=1 ! udpsink host=127.0.0.1 port=5000"
+  -artp "pt=96 ! udpsink host=127.0.0.1 port=5002"
 
 # --- control plane -----------------------------------------------------------
 couchd_port: 8765
+# Shown on the dashboard. An iOS app can't be installed from a plain link:
+# put a TestFlight invite here once there is one.
+app_build_url: ""
+plex_url: https://plex.nase.zbytocnosti.sk
 web_port: 80
 caddy_image: docker.io/library/caddy:2.10-alpine

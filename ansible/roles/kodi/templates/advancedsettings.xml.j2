@@ -9,4 +9,9 @@
     <!-- Smaller artwork textures: less GPU memory and faster Plex browsing. -->
     <imageres>540</imageres>
     <fanartres>720</fanartres>
+    <gui>
+        <!-- Redraw only regions that changed (Kodi otherwise repaints the
+             whole screen every frame: measured 85 % CPU after boot). -->
+        <algorithmdirtyregions>3</algorithmdirtyregions>
+    </gui>
 </advancedsettings>

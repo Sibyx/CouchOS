@@ -3,10 +3,11 @@
 
 Runs as a systemd --user service of the media user, next to Kodi and UxPlay.
 
-* Display arbiter: Kodi (GBM) and UxPlay (kmssink) cannot both hold the DRM
-  display. UxPlay writes its -dacp file only while an AirPlay client is
-  connected; couchd watches it, stops Kodi and wakes the TV when a client
-  connects, and starts Kodi again when the client leaves.
+* AirPlay inside Kodi: Kodi (and Plex in it) never stops. UxPlay only
+  receives and forwards RTP; airplay-bridge muxes it into MPEG-TS on
+  udp://127.0.0.1:5010. UxPlay writes its -dacp file only while a client is
+  connected: couchd then makes Kodi play the stream (hardware decode) and
+  wakes the TV, and stops it when the client leaves, so Plex is back at once.
 * HDMI-CEC: through Kodi while it runs (it owns /dev/cec0), else cec-ctl.
 * Bluetooth speakers (bluetoothctl) and volume (wpctl).
 * JSON API on the LAN (trusted network, no auth) for the web UI and future
@@ -29,7 +30,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 
 BIND = os.environ.get("COUCHD_BIND", "0.0.0.0")
 PORT = int(os.environ.get("COUCHD_PORT", "8765"))
@@ -37,8 +38,11 @@ KODI_RPC = os.environ.get("COUCHD_KODI_RPC", "http://127.0.0.1:8080/jsonrpc")
 DACP_FILE = Path(os.environ.get("COUCHD_DACP_FILE", str(Path.home() / ".uxplay.dacp")))
 CEC_DEVICE = os.environ.get("COUCHD_CEC_DEVICE", "/dev/cec0")
 OSD_NAME = os.environ.get("COUCHD_OSD_NAME", "CouchOS")
-# Seconds the AirPlay client must be gone before Kodi comes back (reconnects).
-RESTORE_DELAY = float(os.environ.get("COUCHD_RESTORE_DELAY", "3"))
+# Seconds the AirPlay client must be gone before the stream is stopped (reconnects).
+RESTORE_DELAY = float(os.environ.get("COUCHD_RESTORE_DELAY", "2"))
+# What Kodi plays during AirPlay (airplay-bridge output). The ".ts" suffix makes
+# Kodi use its video player; udp:// gets Kodi's low-latency realtime handling.
+AIRPLAY_URL = os.environ.get("COUCHD_AIRPLAY_URL", "udp://127.0.0.1:5010/airplay.ts")
 
 MAC_RE = re.compile(r"^[0-9A-F]{2}(:[0-9A-F]{2}){5}$")
 KODI_INPUTS = {
@@ -138,79 +142,96 @@ class Cec:
         return match.group(1) if match else None
 
 
-# --- display arbiter -----------------------------------------------------------
+# --- AirPlay -------------------------------------------------------------------
 
 
-class Arbiter:
-    """Owns the decision whether Kodi or AirPlay has the screen."""
+class AirPlay:
+    """Plays the AirPlay stream in Kodi while an iPhone/Mac is connected.
+
+    There are no modes: Plex is always the TV's home, AirPlay is a temporary
+    full-screen video on top of it.
+    """
 
     def __init__(self, cec: Cec):
         self.cec = cec
         self.lock = threading.Lock()
-        self.mode = "kodi"  # kodi | airplay | idle
-        self.airplay_connected = False
+        self.active = False
+        self.since: float | None = None
         self._gone_since: float | None = None
+        self._saved_refresh: int | None = None
 
     def start(self) -> None:
-        threading.Thread(target=self._watch, name="arbiter", daemon=True).start()
+        threading.Thread(target=self._watch, name="airplay", daemon=True).start()
 
     def _watch(self) -> None:
         while True:
             try:
                 self._tick()
             except Exception:  # keep watching whatever happens
-                log.exception("arbiter tick failed")
-            time.sleep(0.5)
+                log.exception("airplay tick failed")
+            time.sleep(0.25)
 
     def _tick(self) -> None:
         connected = DACP_FILE.exists()
         with self.lock:
-            if connected and not self.airplay_connected:
-                self.airplay_connected = True
+            if connected and not self.active:
+                self.active = True
+                self.since = time.time()
                 self._gone_since = None
                 log.info("AirPlay client connected")
-                # Also from "idle": starting AirPlay should wake the screen.
-                if self.mode in ("kodi", "idle"):
-                    self._to_airplay()
-            elif not connected and self.airplay_connected:
+                self._begin()
+            elif not connected and self.active:
                 now = time.monotonic()
                 if self._gone_since is None:
                     self._gone_since = now
                 elif now - self._gone_since >= RESTORE_DELAY:
-                    self.airplay_connected = False
-                    self._gone_since = None
                     log.info("AirPlay client left")
-                    if self.mode == "airplay":
-                        self._to_kodi()
+                    self._end()
             elif connected:
                 self._gone_since = None
 
-    def _to_airplay(self) -> None:
-        # Stop Kodi so kmssink can take the display, then make sure the TV is
-        # on and showing this input (Kodi may send standby when it exits).
-        unit_action("stop", "kodi.service")
-        self.mode = "airplay"
-        self.cec.tv("on")
+    def _begin(self) -> None:
+        # Open the stream before video arrives, so Kodi catches the first
+        # keyframe (iOS sends very few). Keep the TV's mode fixed: a refresh
+        # rate switch blanks the screen for seconds.
+        try:
+            self._saved_refresh = kodi_rpc("Settings.GetSettingValue", {"setting": "videoplayer.adjustrefreshrate"})["value"]
+            kodi_rpc("Settings.SetSettingValue", {"setting": "videoplayer.adjustrefreshrate", "value": 0})
+        except (OSError, ApiError, KeyError, TypeError) as exc:
+            log.warning("could not pin refresh rate: %s", exc)
+        try:
+            kodi_rpc("Player.Open", {"item": {"file": AIRPLAY_URL}})
+        except (OSError, ApiError) as exc:
+            log.error("could not open AirPlay stream in Kodi: %s", exc)
+        try:
+            self.cec.tv("on")
+        except (OSError, ApiError, subprocess.TimeoutExpired) as exc:
+            log.warning("CEC wake failed: %s", exc)
 
-    def _to_kodi(self) -> None:
-        unit_action("start", "kodi.service")
-        self.mode = "kodi"
+    def _end(self) -> None:
+        self.active = False
+        self.since = None
+        self._gone_since = None
+        try:
+            if self._playing_airplay():
+                kodi_rpc("Player.Stop", {"playerid": 1})
+            if self._saved_refresh is not None:
+                kodi_rpc("Settings.SetSettingValue", {"setting": "videoplayer.adjustrefreshrate", "value": self._saved_refresh})
+        except (OSError, ApiError) as exc:
+            log.warning("could not stop AirPlay stream: %s", exc)
+        self._saved_refresh = None
 
-    def set_mode(self, mode: str) -> None:
+    @staticmethod
+    def _playing_airplay() -> bool:
+        item = kodi_rpc("Player.GetItem", {"playerid": 1, "properties": ["file"]}, timeout=3)
+        return (item or {}).get("item", {}).get("file", "").startswith(AIRPLAY_URL.split("/airplay")[0])
+
+    def disconnect(self) -> None:
+        """Kick the connected device: restarting UxPlay drops the session."""
+        unit_action("restart", "uxplay.service")
         with self.lock:
-            if mode == "kodi":
-                self._to_kodi()
-            elif mode == "airplay":
-                self._to_airplay()
-            elif mode == "idle":
-                if unit_active("kodi.service"):
-                    self.cec.tv("standby")
-                    unit_action("stop", "kodi.service")
-                else:
-                    self.cec.tv("standby")
-                self.mode = "idle"
-            else:
-                raise ApiError(HTTPStatus.BAD_REQUEST, "mode must be kodi, airplay or idle")
+            if self.active:
+                self._end()
 
 
 # --- Bluetooth -------------------------------------------------------------------
@@ -353,20 +374,48 @@ def now_playing() -> dict | None:
 # --- HTTP API --------------------------------------------------------------------
 
 
+def addresses() -> list[str]:
+    out = run("ip", "-4", "-o", "addr", "show", "scope", "global").stdout
+    return re.findall(r"inet (\d+\.\d+\.\d+\.\d+)/", out)
+
+
 class App:
     def __init__(self) -> None:
         self.cec = Cec()
-        self.arbiter = Arbiter(self.cec)
+        self.airplay = AirPlay(self.cec)
         self.bt = Bluetooth()
+        self._status: tuple[float, dict] | None = None
+        self._status_lock = threading.Lock()
 
     def status(self) -> dict:
-        kodi = unit_active("kodi.service")
+        # Each status runs a few subprocesses; several clients polling must
+        # not multiply that on a Pi 3.
+        with self._status_lock:
+            if self._status and time.monotonic() - self._status[0] < 1.5:
+                return self._status[1]
+            kodi = unit_active("kodi.service")
+            status = {
+                "version": VERSION,
+                "kodi": {"running": kodi, "playing": now_playing() if kodi else None},
+                "airplay": {
+                    "running": unit_active("uxplay.service"),
+                    "active": self.airplay.active,
+                    "since": self.airplay.since,
+                },
+                "system": system_status(),
+            }
+            self._status = (time.monotonic(), status)
+            return status
+
+    def info(self) -> dict:
         return {
             "version": VERSION,
-            "mode": self.arbiter.mode,
-            "kodi": {"running": kodi, "playing": now_playing() if kodi else None},
-            "airplay": {"running": unit_active("uxplay.service"), "connected": self.arbiter.airplay_connected},
-            "system": system_status(),
+            "hostname": os.uname().nodename,
+            "addresses": addresses(),
+            "airplay_name": OSD_NAME,
+            "app_url": os.environ.get("COUCHD_APP_URL", ""),
+            "plex_url": os.environ.get("COUCHD_PLEX_URL", ""),
+            "ports": {"api": PORT, "kodi_jsonrpc_tcp": 9090, "kodi_http": 8080},
         }
 
     def route(self, method: str, path: str, body: dict) -> object:
@@ -376,9 +425,13 @@ class App:
                 return {"ok": True}
             case ("GET", ["status"]):
                 return self.status()
-            case ("POST", ["mode"]):
-                self.arbiter.set_mode(str(body.get("mode", "")))
-                return self.status()
+            case ("GET", ["info"]):
+                return self.info()
+            case ("POST", ["airplay", "stop"]):
+                self.airplay.disconnect()
+                with self._status_lock:
+                    self._status = None
+                return {"ok": True}
             case ("POST", ["tv"]):
                 return {"via": self.cec.tv(str(body.get("power", "")))}
             case ("POST", ["kodi", "input"]):
@@ -475,7 +528,7 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
 def main() -> None:
     logging.basicConfig(level=os.environ.get("COUCHD_LOG", "INFO"), format="%(levelname)s %(name)s: %(message)s")
     app = App()
-    app.arbiter.start()
+    app.airplay.start()
     server = ThreadingHTTPServer((BIND, PORT), make_handler(app))
     server.daemon_threads = True
     log.info("couchd %s listening on %s:%d", VERSION, BIND, PORT)

@@ -2,29 +2,26 @@
 
 A minimal media appliance for a **Raspberry Pi 3B+** driving a Samsung TV over HDMI:
 
-- **Plex** on the TV: Kodi 21 (GBM, hardware H.264) + [PM4K](https://github.com/pannal/plex-for-kodi), opened automatically at boot
-- **AirPlay** from iPhone/Mac: [UxPlay](https://github.com/FDH2/UxPlay) 1.73.7. The TV wakes up and switches input when you start mirroring
-- **TV remote** works via HDMI-CEC; phone control via web UI, the Kodi app, or the JSON API
+- **Plex** on the TV: Kodi 21 (GBM, hardware H.264) + [PM4K](https://github.com/pannal/plex-for-kodi) in its kiosk mode, so the TV boots straight into Plex
+- **AirPlay** from iPhone/Mac: [UxPlay](https://github.com/FDH2/UxPlay) 1.73.7 receives, Kodi plays it on top of Plex. No modes: start mirroring and the TV wakes and shows it; stop and Plex is back immediately
+- **TV remote** works via HDMI-CEC; phone control via the iOS app (`repos/couchos-app`), the Kodi app, or the JSON API; `http://beelzebub-tv.local/` is an info dashboard
 - **Bluetooth speaker** (e.g. JBL) via PipeWire
 - **1 TB HDD** at `/srv/media` for local photos, music and videos
 
 ## Architecture
 
 ```
-            ┌──────────────── Raspberry Pi 3B+ (Raspberry Pi OS Lite trixie, arm64) ───────────────┐
- iPhone ───►│ uxplay ─┐                        systemd --user of "tv" (linger)                  │
- AirPlay    │         │ -dacp file             ┌──────────────┐                                 │
-            │         └──────────────────────► │   couchd     │◄── :8765 JSON API (LAN, no auth) │
- Browser ──►│ couch-web (podman, Caddy) :80 ──►│ arbiter, CEC │                                  │
-            │                                  │ BT, volume   │── systemctl --user stop/start ─┐ │
- Plex srv ─►│ kodi (GBM) + PM4K ◄──────────────┴──────────────┘   JSON-RPC :8080               │ │
-            │   │ DRM/KMS, V4L2 decode, /dev/cec0                                              │ │
-            │   └────────────── HDMI ──► Samsung TV          PipeWire ──► HDMI / Bluetooth     │ │
-            └──────────────────────────────────────────────────────────────────────────────────┘
+ iPhone ── AirPlay ──► uxplay (receive only) ──RTP :5000/:5002──► airplay-bridge ──MPEG-TS udp :5010──┐
+                          │ -dacp file (exists while connected)                                     │
+                          ▼                                                                         ▼
+ iOS app ── TCP :9090 ─────────────────────────────────────────────────────────────────► kodi (GBM) + PM4K ──HDMI──► TV
+         └─ HTTP :8765 ──► couchd ── JSON-RPC: Player.Open/Stop, CEC ──────────────────►   (never stops)
+ Browser ── :80 ──► couch-web (podman, Caddy): dashboard
 ```
 
-- Kodi and UxPlay both need the DRM display. **couchd** watches UxPlay's `-dacp` file, which exists only while an AirPlay client is connected. On connect it stops Kodi and wakes the TV over CEC. When the client leaves (after a 3 s grace period) it starts Kodi again.
-- Kodi, UxPlay, PipeWire and couchd run natively as **systemd user services** of the `tv` user (they need the GPU, CEC, V4L2 and audio). **Podman** (rootless quadlet) runs the web UI and is the place for future add-ons.
+- **The TV is always Kodi + Plex.** AirPlay is a video Kodi plays on top: when UxPlay's `-dacp` file appears, couchd opens `udp://127.0.0.1:5010/airplay.ts` in Kodi (refresh-rate switching paused, TV woken over CEC). When it disappears, couchd stops the video and Plex is exactly where it was. No Kodi restarts.
+- Kodi decodes AirPlay video in hardware (V4L2 mem2mem via ffmpeg), which copes with iPhone mirror sizes (1920×886, portrait, rotation). UxPlay's own GStreamer V4L2 path crashed on them.
+- Kodi, UxPlay, the bridge, PipeWire and couchd run natively as **systemd user services** of the `tv` user. **Podman** (rootless quadlet) runs the dashboard and is the place for future add-ons.
 - Avahi advertises `_http._tcp` (web UI), `_couchos._tcp` (API), Kodi (`_xbmc-jsonrpc`), and AirPlay (`_airplay`, `_raop`).
 
 ## Layout
@@ -93,8 +90,9 @@ The Pi 3B+ can supply only 1.2 A across all USB ports. A 2.5" HDD can draw close
 ### API (no auth, trusted LAN)
 
 ```
-GET  /api/status                      mode, now playing, AirPlay, temp/mem
-POST /api/mode        {"mode": "kodi|airplay|idle"}
+GET  /api/status                      now playing, AirPlay session, temp/mem/power
+GET  /api/info                        hostname, addresses, AirPlay name, links
+POST /api/airplay/stop                end the current AirPlay session
 POST /api/tv          {"power": "on|standby"}
 POST /api/kodi/input  {"action": "up|down|left|right|select|back|home|info|menu|playpause|stop|forward|rewind"}
 POST /api/kodi/text   {"text": "...", "done": true}   types into the TV's on-screen keyboard

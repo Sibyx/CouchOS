@@ -39,13 +39,11 @@
     directory_mode: "0755"
   notify: Restart kodi
 
-- name: CouchOS Kodi add-on autostart
-  ansible.builtin.template:
-    src: service.py.j2
-    dest: "{{ tv_home }}/.kodi/addons/service.couchos/service.py"
-    owner: "{{ tv_user }}"
-    group: "{{ tv_user }}"
-    mode: "0644"
+# Superseded by PM4K's kiosk mode (below); two launchers raced each other.
+- name: Remove the old CouchOS autostart
+  ansible.builtin.file:
+    path: "{{ tv_home }}/.kodi/addons/service.couchos/service.py"
+    state: absent
   notify: Restart kodi
 
 - name: Add-on installer
@@ -101,3 +99,54 @@
       - service.couchos
   register: pm4k_enable
   changed_when: (pm4k_enable.stdout | from_json).changed
+
+# PM4K's "Start Plex On Kodi Startup" (kiosk.mode): Plex opens at boot and
+# owns the screen. The file also holds the Plex sign-in, so merge one line
+# instead of templating it, and only while Kodi is stopped (Kodi rewrites the
+# file on exit).
+- name: Read PM4K settings
+  ansible.builtin.slurp:
+    src: "{{ pm4k_settings }}"
+  register: pm4k_settings_raw
+  failed_when: false
+
+- name: Turn on PM4K kiosk mode
+  when: >-
+    pm4k_settings_raw.content is not defined or
+    '<setting id="kiosk.mode">true</setting>' not in (pm4k_settings_raw.content | b64decode)
+  block:
+    - name: Stop Kodi while editing its settings
+      become_user: "{{ tv_user }}"
+      environment: "{{ tv_env }}"
+      ansible.builtin.systemd_service:
+        name: kodi.service
+        scope: user
+        state: stopped
+
+    - name: Merge kiosk.mode into PM4K settings
+      ansible.builtin.lineinfile:
+        path: "{{ pm4k_settings }}"
+        regexp: '^\s*<setting id="kiosk\.mode"'
+        line: '    <setting id="kiosk.mode">true</setting>'
+        insertbefore: '^</settings>'
+      when: pm4k_settings_raw.content is defined
+
+    - name: Create PM4K settings with kiosk.mode
+      ansible.builtin.copy:
+        dest: "{{ pm4k_settings }}"
+        owner: "{{ tv_user }}"
+        group: "{{ tv_user }}"
+        mode: "0644"
+        content: |
+          <settings version="2">
+              <setting id="kiosk.mode">true</setting>
+          </settings>
+      when: pm4k_settings_raw.content is not defined
+
+    - name: Start Kodi
+      become_user: "{{ tv_user }}"
+      environment: "{{ tv_env }}"
+      ansible.builtin.systemd_service:
+        name: kodi.service
+        scope: user
+        state: started

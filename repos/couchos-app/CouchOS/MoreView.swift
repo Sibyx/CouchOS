@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Control plane (couchd): screen mode, TV power, sound, Bluetooth, host.
+/// Control plane (couchd): TV power, sound, Bluetooth, host.
+/// There is no "mode": the TV is always Plex, AirPlay takes over by itself.
 struct MoreView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -9,17 +10,15 @@ struct MoreView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Screen") {
-                    Picker("Mode", selection: Binding(get: { model.status?.mode ?? "kodi" }, set: { model.setMode($0) })) {
-                        Text("Plex").tag("kodi")
-                        Text("AirPlay").tag("airplay")
-                        Text("Off").tag("idle")
-                    }
-                    .pickerStyle(.segmented)
+                Section("TV") {
                     HStack {
-                        Button("TV on") { model.tv("on") }
+                        Button("Turn on") { model.tv("on") }
                         Spacer()
-                        Button("TV standby") { model.tv("standby") }
+                        Button("Standby") { model.tv("standby") }
+                    }
+                    .buttonStyle(.borderless)
+                    if model.airplayActive {
+                        Button("Stop AirPlay", role: .destructive) { model.stopAirPlay() }
                     }
                 }
 

@@ -30,6 +30,8 @@ struct NowPlaying: Equatable {
     var title: String
     var subtitle: String
     var paused: Bool
+    /// couchd plays AirPlay as udp://127.0.0.1:5010/airplay.ts inside Kodi.
+    var isAirPlay = false
 }
 
 @Observable
@@ -54,15 +56,14 @@ final class AppModel {
         var text: String
     }
 
-    /// Touchpad behaviour: directional swipes, or a mouse pointer.
-    var pointerMode = false {
-        didSet { if pointerMode { pointer = CGPoint(x: 0.5, y: 0.5); events.movePointer(x: 0.5, y: 0.5) } }
+    /// A phone is mirroring to the TV (Kodi plays the AirPlay stream on top of Plex).
+    var airplayActive: Bool {
+        nowPlaying?.isAirPlay == true || status?.airplay.active == true
     }
-    private(set) var pointer = CGPoint(x: 0.5, y: 0.5)
 
     private let kodi = KodiLink()
-    private let events = EventServer()
     private let discovery = Discovery()
+    private var flick: Task<Void, Never>?
     private let tap = UIImpactFeedbackGenerator(style: .light)
     private let thud = UIImpactFeedbackGenerator(style: .medium)
     private var poll: Task<Void, Never>?
@@ -99,29 +100,41 @@ final class AppModel {
         poll?.cancel()
         discovery.stop()
         kodi.disconnect()
-        events.disconnect()
     }
 
     func reconnect() {
         kodi.connect(host: host)
-        events.connect(host: host)
-    }
-
-    /// Relative finger movement (in points) -> absolute Kodi pointer.
-    func movePointer(dx: CGFloat, dy: CGFloat) {
-        let speed: CGFloat = 1 / 260 // one pad width moves ~1.3 screens
-        pointer.x = min(max(pointer.x + dx * speed, 0), 1)
-        pointer.y = min(max(pointer.y + dy * speed * 16 / 9, 0), 1)
-        events.movePointer(x: pointer.x, y: pointer.y)
     }
 
     // MARK: Kodi (low-latency path)
 
     func press(_ key: Key) {
+        flick?.cancel()
         tap.impactOccurred()
         tap.prepare()
         let rpc = key.rpc
         kodi.call(rpc.method, rpc.params)
+    }
+
+    /// Momentum after a fast swipe: extra steps that slow down, like a list
+    /// coasting. Any new touch cancels it.
+    func coast(_ key: Key, steps: Int) {
+        flick?.cancel()
+        guard steps > 0 else { return }
+        let rpc = key.rpc
+        flick = Task { [weak self] in
+            var delay = 45.0
+            for _ in 0..<steps {
+                try? await Task.sleep(for: .milliseconds(Int(delay)))
+                guard !Task.isCancelled, let self else { return }
+                self.kodi.call(rpc.method, rpc.params)
+                delay *= 1.18
+            }
+        }
+    }
+
+    func cancelCoast() {
+        flick?.cancel()
     }
 
     func sendText(_ text: String, done: Bool) {
@@ -159,7 +172,7 @@ final class AppModel {
     }
 
     private func loadItem(player id: Int) {
-        kodi.call("Player.GetItem", ["playerid": id, "properties": ["title", "showtitle", "season", "episode", "artist"]]) { [weak self] result in
+        kodi.call("Player.GetItem", ["playerid": id, "properties": ["title", "showtitle", "season", "episode", "artist", "file"]]) { [weak self] result in
             guard let self, let item = (result as? [String: Any])?["item"] as? [String: Any] else {
                 self?.nowPlaying = nil
                 return
@@ -172,6 +185,10 @@ final class AppModel {
                 subtitle = season >= 0 ? String(format: "%@ · S%02dE%02d", show, season, episode) : show
             } else if let artists = item["artist"] as? [String], !artists.isEmpty {
                 subtitle = artists.joined(separator: ", ")
+            }
+            if (item["file"] as? String)?.hasSuffix("/airplay.ts") == true {
+                self.nowPlaying = NowPlaying(title: "iPhone screen", subtitle: "AirPlay", paused: false, isAirPlay: true)
+                return
             }
             self.kodi.call("Player.GetProperties", ["playerid": id, "properties": ["speed"]]) { props in
                 let paused = ((props as? [String: Any])?["speed"] as? Int) == 0
@@ -192,9 +209,13 @@ final class AppModel {
         bluetooth = try? await couchd?.get("bluetooth")
     }
 
-    func setMode(_ mode: String) {
+    func stopAirPlay() {
         thud.impactOccurred()
-        run { [self] api in status = try await api.post("mode", ["mode": mode]) }
+        run { [self] api in
+            let _: OK = try await api.post("airplay/stop")
+            nowPlaying = nil
+            await refreshStatus()
+        }
     }
 
     func tv(_ power: String) {

@@ -6,9 +6,9 @@ struct RemoteView: View {
 
     var body: some View {
         @Bindable var model = model
-        VStack(spacing: 16) {
+        VStack(spacing: 14) {
             header
-            nowPlaying
+            if model.airplayActive { airplayBanner } else { nowPlaying }
             Touchpad()
             controls
             transport
@@ -16,6 +16,7 @@ struct RemoteView: View {
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
         .background(Color.black.ignoresSafeArea())
+        .animation(.snappy(duration: 0.2), value: model.airplayActive)
         .sheet(isPresented: $showMore) { MoreView() }
         .sheet(item: $model.keyboard) { request in KeyboardSheet(request: request) }
         .alert("CouchOS", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
@@ -26,44 +27,51 @@ struct RemoteView: View {
     }
 
     private var header: some View {
-        HStack {
+        HStack(spacing: 8) {
             Circle().fill(dotColor).frame(width: 8, height: 8)
-            Text(connectionLabel).font(.footnote).foregroundStyle(.secondary)
+            Text(connectionLabel).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
             Spacer()
-            Picker("Touchpad", selection: Bindable(model).pointerMode) {
-                Image(systemName: "arrow.up.and.down.and.arrow.left.and.right").tag(false)
-                    .accessibilityLabel("Swipe navigation")
-                Image(systemName: "cursorarrow").tag(true)
-                    .accessibilityLabel("Mouse pointer")
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 110)
             Button { showMore = true } label: {
-                Image(systemName: "slider.horizontal.3").font(.title3)
+                Image(systemName: "slider.horizontal.3").font(.title3).frame(width: 44, height: 44)
             }
-            .accessibilityLabel("Screen, sound and Bluetooth")
+            .accessibilityLabel("TV, sound and Bluetooth")
         }
-        .padding(.top, 8)
     }
 
     private var nowPlaying: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(model.nowPlaying?.title ?? modeTitle)
-                    .font(.headline).lineLimit(1)
-                Text(model.nowPlaying?.subtitle ?? " ")
-                    .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                Text(model.nowPlaying?.title ?? "Plex").font(.headline).lineLimit(1)
+                Text(model.nowPlaying?.subtitle ?? " ").font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer()
         }
-        .frame(minHeight: 44)
+        .frame(minHeight: 48)
+    }
+
+    private var airplayBanner: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "airplayvideo").font(.title2)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Screen sharing").font(.headline).lineLimit(1)
+                Text("Stop to return to Plex").font(.subheadline).opacity(0.8).lineLimit(1)
+            }
+            Spacer()
+            Button("Stop") { model.stopAirPlay() }
+                .buttonStyle(.borderedProminent)
+                .tint(.black.opacity(0.35))
+        }
+        .foregroundStyle(.black)
+        .padding(12)
+        .frame(minHeight: 48)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.orange))
     }
 
     private var controls: some View {
         HStack(spacing: 12) {
             RemoteButton(symbol: "arrow.uturn.backward", label: "Back") { model.press(.back) }
             RemoteButton(symbol: "house", label: "Home") { model.press(.home) }
-            RemoteButton(symbol: "info.circle", label: "Info") { model.press(.info) }
+            RemoteButton(symbol: "ellipsis", label: "Menu") { model.press(.menu) }
             RemoteButton(symbol: "keyboard", label: "Keyboard") {
                 model.keyboard = AppModel.KeyboardRequest(title: "Type", text: "")
             }
@@ -94,7 +102,7 @@ struct RemoteView: View {
 
     private var connectionLabel: String {
         if model.kodiState != .ready, model.status?.kodi.running == false {
-            return "Kodi off · \(model.host)"
+            return "TV app is starting… · \(model.host)"
         }
         return switch model.kodiState {
         case .ready: model.host
@@ -103,34 +111,32 @@ struct RemoteView: View {
         case .idle: "Offline"
         }
     }
-
-    private var modeTitle: String {
-        switch model.status?.mode {
-        case "airplay": model.status?.airplay.connected == true ? "AirPlay mirroring" : "Waiting for AirPlay"
-        case "idle": "Screen off"
-        default: "Plex"
-        }
-    }
 }
 
-/// Apple TV-style surface: swipe = one step per `step` points (drag on to
-/// scroll), tap = select, long press = context menu.
+/// Apple TV-style surface.
+/// - Drag: one step every `step` points; keep dragging to keep moving.
+/// - Fast flick: momentum, extra steps that slow down (any touch stops it).
+/// - Tap: select. Hold: context menu.
 struct Touchpad: View {
     @Environment(AppModel.self) private var model
     @State private var anchor: CGPoint?
+    @State private var lastKey: Key?
     @State private var travelled: CGFloat = 0
     @State private var began = Date()
-    @State private var longPressFired = false
-    @State private var longPress: Task<Void, Never>?
+    @State private var held = false
+    @State private var hold: Task<Void, Never>?
 
-    private let step: CGFloat = 36
+    private let step: CGFloat = 34
 
     var body: some View {
         RoundedRectangle(cornerRadius: 28, style: .continuous)
             .fill(Color(white: 0.11))
             .overlay {
-                Image(systemName: model.pointerMode ? "cursorarrow.motionlines" : "hand.point.up.left")
-                    .font(.largeTitle).foregroundStyle(Color(white: 0.25))
+                VStack(spacing: 6) {
+                    Image(systemName: "hand.draw").font(.largeTitle)
+                    Text("Swipe to move · tap to select · hold for menu").font(.caption)
+                }
+                .foregroundStyle(Color(white: 0.3))
             }
             .contentShape(Rectangle())
             .gesture(drag)
@@ -147,43 +153,45 @@ struct Touchpad: View {
     private var drag: some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .local)
             .onChanged { value in
-                if anchor == nil {
-                    anchor = value.startLocation
-                    travelled = 0
-                    began = Date()
-                    longPressFired = false
-                    longPress = Task {
-                        try? await Task.sleep(for: .milliseconds(450))
-                        guard !Task.isCancelled, travelled < 10 else { return }
-                        longPressFired = true
-                        model.press(.menu)
-                    }
-                }
+                if anchor == nil { touchDown(at: value.startLocation) }
                 guard let start = anchor else { return }
                 let dx = value.location.x - start.x
                 let dy = value.location.y - start.y
                 travelled = max(travelled, hypot(value.translation.width, value.translation.height))
-                if model.pointerMode {
-                    if travelled >= 4 { longPress?.cancel() }
-                    model.movePointer(dx: dx, dy: dy)
-                    anchor = value.location
-                } else if abs(dx) >= step || abs(dy) >= step {
-                    longPress?.cancel()
-                    if abs(dx) > abs(dy) {
-                        model.press(dx > 0 ? .right : .left)
-                    } else {
-                        model.press(dy > 0 ? .down : .up)
-                    }
-                    anchor = value.location
-                }
+                if travelled >= 10 { hold?.cancel() }
+                guard abs(dx) >= step || abs(dy) >= step else { return }
+                let key: Key = abs(dx) > abs(dy) ? (dx > 0 ? .right : .left) : (dy > 0 ? .down : .up)
+                model.press(key)
+                lastKey = key
+                anchor = value.location
             }
-            .onEnded { _ in
-                longPress?.cancel()
-                if travelled < 10, !longPressFired, Date().timeIntervalSince(began) < 0.45 {
-                    model.press(.select)
+            .onEnded { value in
+                hold?.cancel()
+                defer { anchor = nil; lastKey = nil }
+                if travelled < 10 {
+                    if !held, Date().timeIntervalSince(began) < 0.45 { model.press(.select) }
+                    return
                 }
-                anchor = nil
+                // Momentum along the last direction moved.
+                guard let key = lastKey else { return }
+                let v = value.velocity
+                let speed = (key == .left || key == .right) ? abs(v.width) : abs(v.height)
+                model.coast(key, steps: min(14, Int(speed / 550)))
             }
+    }
+
+    private func touchDown(at point: CGPoint) {
+        model.cancelCoast()
+        anchor = point
+        travelled = 0
+        began = Date()
+        held = false
+        hold = Task {
+            try? await Task.sleep(for: .milliseconds(450))
+            guard !Task.isCancelled, travelled < 10 else { return }
+            held = true
+            model.press(.menu)
+        }
     }
 }
 
@@ -210,7 +218,7 @@ struct RemoteButton: View {
     }
 }
 
-/// No SwiftUI tap delay: the action fires on touch-up with instant visual feedback.
+/// Instant visual feedback on touch-down.
 struct PressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label

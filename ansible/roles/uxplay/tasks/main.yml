@@ -1,5 +1,6 @@
-# UxPlay built from source on the Mac (uxplay/build.sh), not Debian's 1.71.1
-# (CVE-2025-60458). Build it before running this role.
+# AirPlay inside Kodi: UxPlay (built from source on the Mac, uxplay/build.sh;
+# not Debian's 1.71.1, CVE-2025-60458) only receives and forwards RTP.
+# airplay-bridge muxes it to MPEG-TS and Kodi plays it (couchd starts/stops).
 
 - name: Locate the UxPlay build
   ansible.builtin.set_fact:
@@ -15,17 +16,19 @@
 
 - name: UxPlay runtime libraries and GStreamer plugins
   ansible.builtin.apt:
-    name: "{{ lookup('file', uxplay_dist ~ '.DEPENDS').split() + uxplay_gst_plugins }}"
+    name: "{{ lookup('file', uxplay_dist ~ '.DEPENDS').split() + uxplay_gst_packages }}"
     state: present
     install_recommends: false
   vars:
-    uxplay_gst_plugins:
+    uxplay_gst_packages:
+      # gst-launch-1.0 for airplay-bridge
+      - gstreamer1.0-tools
       - gstreamer1.0-plugins-base
-      # v4l2h264dec, v4l2convert, pulsesink
+      # rtp, udp, rtpjitterbuffer, rtpL16depay
       - gstreamer1.0-plugins-good
-      # kmssink, h264parse
+      # mpegtsmux, h264parse
       - gstreamer1.0-plugins-bad
-      # software decoder fallback (-avdec)
+      # avenc_aac
       - gstreamer1.0-libav
 
 - name: Install UxPlay
@@ -36,21 +39,30 @@
     group: root
   notify: Restart uxplay
 
-- name: UxPlay user service
+- name: AirPlay bridge
+  ansible.builtin.copy:
+    src: airplay-bridge.sh
+    dest: /usr/local/libexec/couchos/airplay-bridge
+    mode: "0755"
+  notify: Restart airplay-bridge
+
+- name: AirPlay user services
   ansible.builtin.template:
-    src: uxplay.service.j2
-    dest: "{{ tv_home }}/.config/systemd/user/uxplay.service"
+    src: "{{ item }}.j2"
+    dest: "{{ tv_home }}/.config/systemd/user/{{ item }}"
     owner: "{{ tv_user }}"
     group: "{{ tv_user }}"
     mode: "0644"
-  notify: Restart uxplay
+  loop: [airplay-bridge.service, uxplay.service]
+  notify: [Restart airplay-bridge, Restart uxplay]
 
-- name: Start UxPlay
+- name: Start AirPlay services
   become_user: "{{ tv_user }}"
   environment: "{{ tv_env }}"
   ansible.builtin.systemd_service:
-    name: uxplay.service
+    name: "{{ item }}"
     scope: user
     daemon_reload: true
     enabled: true
     state: started
+  loop: [airplay-bridge.service, uxplay.service]

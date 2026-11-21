@@ -1,0 +1,14 @@
+[Unit]
+Description=AirPlay bridge (UxPlay RTP -> MPEG-TS for Kodi) - CouchOS
+Before=uxplay.service
+StartLimitIntervalSec=0
+
+[Service]
+ExecStart=/usr/local/libexec/couchos/airplay-bridge
+Restart=always
+RestartSec=2
+# Real-time-ish: keep the stream moving even while Kodi is busy.
+Nice=-5
+
+[Install]
+WantedBy=default.target

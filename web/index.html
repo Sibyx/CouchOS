@@ -115,6 +115,12 @@
     <button data-key="stop" aria-label="Stop">⏹</button>
     <button data-key="forward" aria-label="Forward">⏩</button>
   </div>
+  <form id="typeform" class="row" style="margin-top:8px">
+    <input id="typetext" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"
+      placeholder="Type into the TV's keyboard…" aria-label="Text to send to the TV"
+      style="flex:3;font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px;min-height:44px">
+    <button type="submit">Send</button>
+  </form>
 </section>
 
 <section>
@@ -144,6 +150,7 @@
     <button data-sys="reboot">Reboot</button>
     <button id="kodirestart">Restart Kodi</button>
   </div>
+  <a id="kodiweb" style="display:block;margin-top:10px;text-align:center;color:var(--accent)">Kodi web remote (maintenance) →</a>
 </section>
 
 <div id="toast" role="status"></div>
@@ -266,6 +273,12 @@ $("#scan").onclick = () => act(() => api("bluetooth/scan", {})).then(() => {
   const poll = setInterval(refreshBt, 3000);
   setTimeout(() => clearInterval(poll), 20000);
 });
+$("#kodiweb").href = `http://${location.hostname}:8080/`;
+$("#typeform").onsubmit = (e) => {
+  e.preventDefault();
+  const text = $("#typetext").value;
+  act(() => api("kodi/text", { text, done: true }), "Sent to TV").then(() => { $("#typetext").value = ""; });
+};
 $("#kodirestart").onclick = () => act(() => api("kodi/restart", {}), "Kodi restarting");
 $$("[data-sys]").forEach((b) => b.onclick = () => {
   if (b.dataset.armed) { act(() => api("system/" + b.dataset.sys, {}), "Rebooting…"); return; }

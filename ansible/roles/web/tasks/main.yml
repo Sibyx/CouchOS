@@ -40,8 +40,11 @@
     daemon_reload: true
     state: started
 
-- name: Advertise the web UI and API over Bonjour
+- name: Advertise the web UI, API and Kodi web remote over Bonjour
   ansible.builtin.template:
-    src: couchos.service.xml.j2
-    dest: /etc/avahi/services/couchos.service
+    src: "{{ item.src }}"
+    dest: /etc/avahi/services/{{ item.dest }}
     mode: "0644"
+  loop:
+    - { src: couchos.service.xml.j2, dest: couchos.service }
+    - { src: kodi-web.service.xml.j2, dest: kodi-web.service }

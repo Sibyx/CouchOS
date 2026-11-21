@@ -1,0 +1,11 @@
+<?xml version="1.0" standalone='no'?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<!-- Managed by Ansible. Kodi's built-in web remote: maintenance link, typing, library. -->
+<service-group>
+  <name replace-wildcards="yes">Kodi on %h (maintenance)</name>
+  <service>
+    <type>_http._tcp</type>
+    <port>{{ kodi_webserver_port }}</port>
+    <txt-record>path=/</txt-record>
+  </service>
+</service-group>

@@ -97,6 +97,7 @@ GET  /api/status                      mode, now playing, AirPlay, temp/mem
 POST /api/mode        {"mode": "kodi|airplay|idle"}
 POST /api/tv          {"power": "on|standby"}
 POST /api/kodi/input  {"action": "up|down|left|right|select|back|home|info|menu|playpause|stop|forward|rewind"}
+POST /api/kodi/text   {"text": "...", "done": true}   types into the TV's on-screen keyboard
 POST /api/kodi/restart
 GET  /api/audio       POST /api/audio {"volume": 0-150} | {"delta": ±n} | {"mute": bool}
 GET  /api/bluetooth   POST /api/bluetooth/scan
@@ -116,7 +117,7 @@ These parts were designed from the documentation and need confirming on real har
 
 1. **AirPlay hand-off trigger.** While *screen mirroring*, `ls -l /home/tv/.uxplay.dacp` must show the file (UxPlay documents it for any connected client, but DACP is an audio remote-control protocol). If it doesn't appear, the arbiter never fires. Fallback: trigger on UxPlay's journal lines instead.
 2. **kmssink after Kodi stops.** After the hand-off, `sudo journalctl _SYSTEMD_USER_UNIT=uxplay.service` must show no DRM permission or atomic-commit errors, and the iPhone screen must appear. If UxPlay opened the DRM device while Kodi was master, it may never get master. Fix: restart `uxplay.service` as part of the hand-off.
-3. `sudo journalctl _SYSTEMD_USER_UNIT=kodi.service` (and `systemctl --user -M tv@ status kodi`) shows GBM on `/dev/dri/card*`, and H.264 playback uses `drm_prime`/V4L2 (Kodi debug overlay: `o` key / player info).
+3. `sudo journalctl _SYSTEMD_USER_UNIT=kodi.service` (and `sudo systemctl --user -M tv@ status kodi`) shows GBM on `/dev/dri/card*`, and H.264 playback uses `drm_prime`/V4L2 (Kodi debug overlay: `o` key / player info).
 4. **Kodi CEC on exit:** Kodi → Settings → System → Input → Peripherals → CEC → *Devices to power off when Kodi exits* = **None**. Otherwise the TV briefly goes to standby when AirPlay takes over (couchd wakes it again).
 5. **UxPlay idle:** with Kodi running, start UxPlay and check Kodi keeps the display. If UxPlay grabs DRM at startup, move `After=kodi.service` to a start-on-demand design.
 6. **AirPlay picture:** `kmssink` scaling and full screen on the Samsung. Adjust `uxplay_args` (e.g. `-vs "kmssink can-scale=true"`) if the image is not full screen.

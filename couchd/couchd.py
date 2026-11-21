@@ -391,6 +391,14 @@ class App:
                 except OSError as exc:
                     raise ApiError(HTTPStatus.SERVICE_UNAVAILABLE, f"Kodi is not reachable: {exc}") from exc
                 return {"ok": True}
+            case ("POST", ["kodi", "text"]):
+                # Fills the on-screen keyboard (search, server address, ...).
+                text = str(body.get("text", ""))[:500]
+                try:
+                    kodi_rpc("Input.SendText", {"text": text, "done": bool(body.get("done", True))})
+                except OSError as exc:
+                    raise ApiError(HTTPStatus.SERVICE_UNAVAILABLE, f"Kodi is not reachable: {exc}") from exc
+                return {"ok": True}
             case ("POST", ["kodi", "restart"]):
                 unit_action("restart", "kodi.service")
                 return {"ok": True}

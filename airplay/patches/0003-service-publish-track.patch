@@ -1,0 +1,54 @@
+diff --git a/inputstream.airplay/resources/lib/service.py b/inputstream.airplay/resources/lib/service.py
+index 5c5e345..f35d67d 100644
+--- a/inputstream.airplay/resources/lib/service.py
++++ b/inputstream.airplay/resources/lib/service.py
+@@ -481,6 +481,19 @@ def forget_devices():
+ # Current track, kept so artwork and tags can be applied together.
+ TRACK = {'title': '', 'artist': '', 'album': '', 'art': ''}
+ 
++# The track for skins and other add-ons, as Home window properties
++# (Window(Home).Property(AirPlay.Artist) ...). The player's item carries only
++# a label, label2 and art -- no info tag, see build_item() -- so this is the
++# one place the artist and album can be read back from.
++HOME_WINDOW = 10000
++
++
++def publish_track():
++    home = xbmcgui.Window(HOME_WINDOW)
++    for key in ('title', 'artist', 'album', 'art'):
++        home.setProperty('AirPlay.' + key.capitalize(), TRACK[key])
++
++
+ # The URL currently handed to the player. For mirroring and music that is
+ # STREAM_URL; for AirPlay video it is the playlist the sender nominated.
+ PLAYING = {'url': ''}
+@@ -1018,6 +1031,7 @@ def handle_event(line):
+         PENDING_INFO['due'] = 0.0
+         PENDING_HLS['due'] = 0.0
+         TRACK.update(title='', artist='', album='', art='')
++        publish_track()
+         DACP.update(id='', token='', host='', port='', retry_at=0.0)
+         stop_playback()
+     elif line.startswith('EVENT DACP '):
+@@ -1033,6 +1047,7 @@ def handle_event(line):
+         if [TRACK['title'], TRACK['artist'], TRACK['album']] == fields[:3]:
+             return
+         TRACK.update(title=fields[0], artist=fields[1], album=fields[2])
++        publish_track()
+         PENDING_INFO['due'] = time.time() + INFO_PUSH_GRACE
+         log('now playing: {} - {}'.format(TRACK['artist'], TRACK['title']))
+     elif line.startswith('EVENT PIN '):
+@@ -1052,11 +1067,13 @@ def handle_event(line):
+         # up against whatever is playing now. The reader strips the line, so an
+         # empty argument arrives as a bare event.
+         TRACK['art'] = ''
++        publish_track()
+         PENDING_INFO['due'] = time.time() + INFO_PUSH_GRACE
+     elif line.startswith('EVENT ART '):
+         if TRACK['art'] == line[10:]:
+             return
+         TRACK['art'] = line[10:]
++        publish_track()
+         PENDING_INFO['due'] = time.time() + INFO_PUSH_GRACE
+     elif line.startswith('EVENT HLS '):
+         # This is a video session after all.

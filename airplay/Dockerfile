@@ -24,6 +24,9 @@ RUN git clone https://github.com/popcornmix/inputstream.airplay.git /src \
 # CouchOS fixes on top of the pin (patches/, each says why; send upstream):
 #  0001 long AirPlay video URLs (Plex) were cut off and silently dropped
 #  0002 play HLS with ffmpeg when inputstream.adaptive is not installed
+#  0003 the track (title, artist, album, art) as Window(Home).Property(AirPlay.*)
+#       for skins: the player's item has no info tag, so the artist and album
+#       could not be read back (the TV dashboard's "now playing")
 COPY patches/ /patches/
 RUN for p in /patches/*.patch; do git -C /src apply --verbose "$p"; done
 

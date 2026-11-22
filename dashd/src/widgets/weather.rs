@@ -20,6 +20,9 @@ const API: &str = "https://api.open-meteo.com/v1/forecast";
 /// Columns the TV has for hours.
 const MAX_HOURS: usize = 6;
 const MAX_DAYS: usize = 7;
+/// Next days on the TV's "next days" slide. Every slot is always served
+/// (blank past the forecast), so a shorter forecast clears the old ones.
+const TV_DAYS: usize = 4;
 /// The duck on the TV, in pixels (within Kodi's 540 px texture limit).
 const DUCK_PX: u32 = 512;
 const DUCK_PNG: &str = "duck-";
@@ -40,7 +43,7 @@ struct Params {
     hours_step: usize,
     #[serde(default = "default_hours_count")]
     hours_count: usize,
-    /// Next days in `data` (not on the TV).
+    /// Next days in `data`; the TV shows the first `TV_DAYS` of them.
     #[serde(default = "default_days")]
     days: usize,
     #[serde(default)]
@@ -352,8 +355,8 @@ impl Forecast {
         })
     }
 
-    /// Display strings for today: whole degrees, an icon per slot,
-    /// precipitation only when it is worth a glance.
+    /// Display strings for today and the next days: whole degrees, an icon
+    /// per slot, precipitation only when it is worth a glance.
     fn view(&self) -> View {
         let n = &self.now;
         let t = &self.today;
@@ -374,6 +377,15 @@ impl Forecast {
             view.insert(format!("hour{k}.icon"), icon(h.code, h.is_day).to_owned());
             view.insert(format!("hour{k}.temp"), deg(h.temperature));
             view.insert(format!("hour{k}.rain"), chance(h.rain_chance).unwrap_or_default());
+        }
+        view.insert("days".into(), if self.days.is_empty() { String::new() } else { "true".into() });
+        for k in 1..=TV_DAYS {
+            let d = self.days.get(k - 1);
+            view.insert(format!("day{k}.name"), d.map_or("", |d| d.weekday).to_owned());
+            view.insert(format!("day{k}.icon"), d.map_or("", |d| icon(d.code, true)).to_owned());
+            view.insert(format!("day{k}.high"), d.map_or_else(String::new, |d| deg(d.high)));
+            view.insert(format!("day{k}.low"), d.map_or_else(String::new, |d| deg(d.low)));
+            view.insert(format!("day{k}.rain"), d.and_then(|d| chance(d.rain_chance)).unwrap_or_default());
         }
         view
     }
@@ -481,7 +493,7 @@ mod tests {
     }
 
     #[test]
-    fn view_is_today_and_display_ready() {
+    fn view_is_display_ready() {
         let v = forecast().view();
         assert_eq!(v["temp"], "2°");
         assert_eq!(v["icon"], "31"); // clear, at night
@@ -492,7 +504,15 @@ mod tests {
         assert_eq!(v["hour1.rain"], "30 %");
         assert_eq!(v["hour1.icon"], "26");
         assert_eq!(v["hour2.temp"], "4°");
-        assert!(!v.keys().any(|k| k.starts_with("day")), "the TV shows today only");
+        assert_eq!(v["days"], "true");
+        assert_eq!(v["day1.name"], "Mon");
+        assert_eq!(v["day1.icon"], "26");
+        assert_eq!((v["day1.high"].as_str(), v["day1.low"].as_str()), ("4°", "1°"));
+        assert_eq!(v["day1.rain"], "");
+        assert_eq!(v["day2.rain"], "75 %");
+        // past the forecast: blank, so a shorter forecast clears the slot
+        assert_eq!(v["day3.name"], "");
+        assert_eq!(v["day4.icon"], "");
     }
 
     #[test]

@@ -122,11 +122,13 @@ uxplay_args: >-
 
 # --- TV dashboard (dashd + screensaver.couchos.dashboard) ----------------------
 # The idle screen: clock, today's weather with the duck dressed for it, the
-# message and TODO list from the app, the frog of the day, the app's QR code.
+# message and TODO list from the app, the frog of the day, and a card that
+# shows what is playing (AirPlay music, Plex music) or else rotates the next
+# days and the app's QR code. AirPlay music opens it by itself.
 # dashd/build.sh builds the binary (the playbook refuses a build older than
 # dashd/src). The Kodi add-on finds dashd's port in its config file.
 dashboard_enabled: true
-dashd_version: 0.2.0
+dashd_version: 0.3.0
 dashd_dist: "{{ playbook_dir }}/../dashd/dist/dashd-{{ dashd_version }}-trixie-arm64"
 dashd_port: 8766
 # Widgets: {id, kind, params}. The TV skin binds these ids (clock, weather,

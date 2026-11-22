@@ -8,6 +8,11 @@ Kodi redrawing the clock once a minute.
 
 Static content all day on a TV risks burn-in: the layout drifts a few pixels
 every few minutes.
+
+The bottom-right card is a carousel: it shows one slide at a time
+(Window.Property(slide)), the next one every SLIDE_SECONDS, skipping slides
+without data. While audio plays, the skin shows what is playing there
+instead, from Kodi's own info labels (nothing to do here).
 """
 
 import json
@@ -24,6 +29,9 @@ LAYOUT = 100  # the group holding everything (see the skin XML)
 SHIFT_SECONDS = 240
 # Small drift around the design position, in pixels.
 SHIFTS = [(0, 0), (6, 4), (-4, 8), (8, -4), (-6, -6), (2, 10)]
+SLIDE_SECONDS = 20
+# (slide, the view key that has to be set for it to show), in order.
+SLIDES = [("days", "weather.days"), ("app", "app.image")]
 
 
 def log(msg, level=xbmc.LOGINFO):
@@ -47,8 +55,9 @@ class Dashboard(xbmcgui.WindowXMLDialog):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._etag = None
-        self._keys = set()
+        self._view = {}
         self._shift = 0
+        self._slide = ""
         self.closed = False
 
     def load(self):
@@ -72,14 +81,30 @@ class Dashboard(xbmcgui.WindowXMLDialog):
             log("dashd unreachable: %s" % exc, xbmc.LOGWARNING)
             return
         properties = view.get("properties", {})
-        for key in self._keys - properties.keys():
+        for key in self._view.keys() - properties.keys():
             self.clearProperty(key)
         for key, value in properties.items():
             if value.startswith(ASSETS):
                 value = DASHD + value
             self.setProperty(key, value)
-        self._keys = set(properties)
+        self._view = properties
         self.clearProperty("offline")
+        if self._slide not in self.slides():
+            self.next_slide()
+
+    def slides(self):
+        return [name for name, key in SLIDES if self._view.get(key)]
+
+    def next_slide(self):
+        """Show the slide after the current one (the first one at start)."""
+        slides = self.slides()
+        if self._slide in slides:
+            slide = slides[(slides.index(self._slide) + 1) % len(slides)]
+        else:
+            slide = slides[0] if slides else ""
+        if slide != self._slide:  # one slide only: nothing to redraw
+            self._slide = slide
+            self.setProperty("slide", slide)
 
     def drift(self):
         self._shift = (self._shift + 1) % len(SHIFTS)
@@ -124,5 +149,7 @@ def run(addon_path):
             window.load()
         if ticks % SHIFT_SECONDS == 0:
             window.drift()
+        if ticks % SLIDE_SECONDS == 0:
+            window.next_slide()
     window.close()
     del window

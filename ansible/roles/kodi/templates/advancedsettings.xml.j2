@@ -15,7 +15,9 @@
         <algorithmdirtyregions>3</algorithmdirtyregions>
         <!-- Skip processing and rendering of frames where nothing changed.
              Without it the GUI loop runs at 60 fps on a static screen
-             (measured 35 % CPU on Kodi's home, 20-40 % on PM4K, at 600 MHz). -->
+             (measured 35 % CPU on Kodi's home, 20-40 % on PM4K, at 600 MHz).
+             Side effect: a notification can stay on screen for good (the
+             CEC adapter's from startup did); service.couchos closes those. -->
         <smartredraw>true</smartredraw>
     </gui>
 </advancedsettings>

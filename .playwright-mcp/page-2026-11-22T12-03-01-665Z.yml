@@ -1,0 +1,74 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e4]:
+      - heading "CouchOS" [level=1] [ref=e5]
+      - generic [ref=e6]: Plex, AirPlay and a quiet dashboard for the TV
+    - status [ref=e7]:
+      - generic [ref=e9]: Looking for the TV box…
+  - generic [ref=e10]:
+    - generic [ref=e12]:
+      - generic [ref=e13]:
+        - img "CouchOS app icon" [ref=e14]
+        - generic [ref=e15]:
+          - heading "The CouchOS remote" [level=2] [ref=e16]
+          - paragraph [ref=e17]: Browse Plex, play on the TV and type with your phone keyboard.
+      - generic [ref=e18]: Checking for the app…
+    - generic [ref=e19]:
+      - heading "On the TV" [level=2] [ref=e20]
+      - generic [ref=e21]: —
+    - generic [ref=e22]:
+      - heading "TV box" [level=2] [ref=e23]
+      - generic [ref=e24]:
+        - term [ref=e25]: Temperature
+        - definition [ref=e26]: —
+        - term [ref=e27]: Free memory
+        - definition [ref=e28]: —
+        - term [ref=e29]: Up for
+        - definition [ref=e30]: —
+        - term [ref=e31]: Version
+        - definition [ref=e32]: —
+    - generic [ref=e33]:
+      - heading "Last 24 hours" [level=2] [ref=e34]
+      - generic [ref=e35]: Loading…
+    - generic [ref=e37]:
+      - heading "Services" [level=2] [ref=e38]
+      - generic [ref=e39]: Loading…
+      - heading "Last 24 hours" [level=3] [ref=e41]
+      - list
+    - generic [ref=e42]:
+      - heading "Share your iPhone screen" [level=2] [ref=e43]
+      - list [ref=e44]:
+        - listitem [ref=e45]: Open Control Center → Screen Mirroring.
+        - listitem [ref=e46]: Choose CouchOS. The TV switches over on its own.
+        - listitem [ref=e47]: Stop mirroring and the TV goes back to Plex.
+    - generic [ref=e48]:
+      - heading "Using the remote" [level=2] [ref=e49]
+      - list [ref=e50]:
+        - listitem [ref=e51]: Install the app, then open it on the home Wi-Fi. It finds this TV box by itself.
+        - listitem [ref=e52]: Swipe on the touchpad to move, tap to select, hold for the menu.
+        - listitem [ref=e53]: The phone keyboard pops up whenever the TV asks for text.
+    - generic [ref=e54]:
+      - heading "Network" [level=2] [ref=e55]
+      - generic [ref=e56]:
+        - term [ref=e57]: Name
+        - definition [ref=e58]:
+          - code [ref=e59]: —
+        - term [ref=e60]: Address
+        - definition [ref=e61]: —
+        - term [ref=e62]: Plex server
+        - definition [ref=e63]: —
+        - term [ref=e64]: API
+        - definition [ref=e65]:
+          - code [ref=e66]: —
+    - generic [ref=e67]:
+      - heading "Maintenance" [level=2] [ref=e68]
+      - generic [ref=e69]:
+        - term [ref=e70]: Kodi web remote
+        - definition [ref=e71]:
+          - link "open" [ref=e72] [cursor=pointer]:
+            - /url: "#"
+        - term [ref=e73]: SSH
+        - definition [ref=e74]:
+          - code [ref=e75]: —
+      - button "Restart Kodi" [ref=e77] [cursor=pointer]
+  - contentinfo [ref=e78]: CouchOS

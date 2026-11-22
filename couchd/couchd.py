@@ -550,11 +550,17 @@ def audio_set(body: dict) -> dict:
 # --- system ----------------------------------------------------------------------
 
 
-def system_status() -> dict:
+def read_meminfo() -> dict[str, int]:
+    """/proc/meminfo in kB."""
     meminfo = {}
     for line in Path("/proc/meminfo").read_text().splitlines():
         key, value = line.split(":", 1)
         meminfo[key] = int(value.split()[0])
+    return meminfo
+
+
+def system_status() -> dict:
+    meminfo = read_meminfo()
     temp = read_first_line("/sys/class/thermal/thermal_zone0/temp")
     throttled = run("vcgencmd", "get_throttled").stdout.strip().partition("=")[2] or None
     return {
@@ -629,7 +635,9 @@ class Metrics:
         self._volt_alarm = volt / "in0_lcrit_alarm" if volt else None
         self._uv_seen = False
         self._dirty = False
-        self.mem_total_mb: int | None = None
+        # Known up front: history loaded from disk is served before the first
+        # sample, and the page needs the total to scale those memory values.
+        self.mem_total_mb: int | None = read_meminfo().get("MemTotal", 0) // 1024 or None
 
     @staticmethod
     def _net_bytes() -> tuple[int, int]:

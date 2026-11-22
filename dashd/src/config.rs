@@ -45,6 +45,8 @@ fn default_widgets() -> Vec<WidgetSpec> {
         {"id": "weather", "kind": "weather",
          "params": {"place": "Bratislava · Staré Mesto", "latitude": 48.1437, "longitude": 17.1066}},
         {"id": "frog", "kind": "frog"},
+        {"id": "board", "kind": "board"},
+        {"id": "app", "kind": "qr"},
     ]))
     .expect("default widgets")
 }
@@ -84,7 +86,7 @@ mod tests {
     #[test]
     fn defaults_build_and_ids_are_checked() {
         let config = Config::load(None).unwrap();
-        assert_eq!(config.widgets.len(), 3);
+        assert_eq!(config.widgets.len(), 5);
         for w in &config.widgets {
             crate::widgets::build(&w.kind, &w.params).unwrap();
         }

@@ -98,6 +98,7 @@ fn content_type(path: &std::path::Path) -> &'static str {
     match path.extension().and_then(|e| e.to_str()) {
         Some("jpg" | "jpeg") => "image/jpeg",
         Some("png") => "image/png",
+        Some("svg") => "image/svg+xml",
         Some("json") => "application/json",
         _ => "application/octet-stream",
     }

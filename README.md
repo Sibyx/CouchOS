@@ -1,4 +1,38 @@
-# CouchOS
+<p align="center">
+  <img src="repos/couchos-app/marketing/out/social-card.png" width="840" alt="CouchOS: browse Plex on your iPhone, play it on the TV">
+</p>
+
+<h1 align="center">CouchOS</h1>
+
+<p align="center">
+  <b>A calm, single-purpose TV box on a Raspberry Pi.</b><br>
+  Plex when you sit down, AirPlay when you share, a quiet dashboard when nobody's watching.
+</p>
+
+<p align="center">
+  <a href="https://couchos.dubec.dev">Website</a> ·
+  <a href="repos/couchos-app/README.md">iPhone app</a> ·
+  <a href="dashd/README.md">Dashboard</a> ·
+  <a href="#1-build-the-base-image-on-the-mac">Build it</a> ·
+  <a href="#api-no-auth-trusted-lan">API</a>
+</p>
+
+---
+
+## The phone is the remote
+
+Browse the whole Plex library on the iPhone, tap **Play on TV**, and the box plays it. The phone never streams. The same app is an Apple TV-style touchpad, a keyboard for the TV, and the switch for TV power, volume and Bluetooth speakers.
+
+<table>
+  <tr>
+    <td align="center" width="25%"><img src="repos/couchos-app/marketing/out/appstore-01.png" alt="Plex home rows on the phone"><br><sub><b>Your library, in your hand</b></sub></td>
+    <td align="center" width="25%"><img src="repos/couchos-app/marketing/out/appstore-02.png" alt="A movie with the Play on TV button"><br><sub><b>Play on TV in one tap</b></sub></td>
+    <td align="center" width="25%"><img src="repos/couchos-app/marketing/out/appstore-03.png" alt="Touchpad remote with the Open on TV menu"><br><sub><b>A remote that feels right</b></sub></td>
+    <td align="center" width="25%"><img src="repos/couchos-app/marketing/out/appstore-04.png" alt="Movie library as a poster grid"><br><sub><b>Every library, every poster</b></sub></td>
+  </tr>
+</table>
+
+## What's in the box
 
 A minimal media appliance for a **Raspberry Pi 3B+** driving a Samsung TV over HDMI:
 

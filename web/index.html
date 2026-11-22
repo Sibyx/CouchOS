@@ -4,34 +4,42 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#101214">
+<meta name="color-scheme" content="dark">
+<meta name="apple-mobile-web-app-title" content="CouchOS">
+<link rel="icon" type="image/png" href="icon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <title>CouchOS</title>
 <style>
+  /* Tokens from repos/couchos-app/docs/BRAND.md (Brand.swift). Dark only:
+     a TV room is dark, so there is no light theme. */
   :root {
-    --bg: #101214; --panel: #1a1d21; --line: #2a2e34; --text: #e8e6e3; --muted: #8b9098;
-    --accent: #e5a00d; --ok: #5fb878; --warn: #e0a03a; --bad: #e0605a; --radius: 14px;
-  }
-  @media (prefers-color-scheme: light) {
-    :root:not([data-theme="dark"]) {
-      --bg: #f3f1ed; --panel: #fff; --line: #e2ded6; --text: #1d1f22; --muted: #6b6f76; --accent: #b87e00;
-    }
+    --bg: #101214; --panel: #1a1d21; --raised: #23272c; --line: #2a2e34;
+    --text: #e8e6e3; --muted: #8b9098; --faint: #4a4f57;
+    --accent: #e5a00d; --accent-deep: #b87e00; --on-accent: #101214;
+    --ok: #5fb878; --warn: #e0a03a; --bad: #e0605a;
+    --r-small: 10px; --r-medium: 16px; --r-large: 28px; --gutter: 16px;
+    color-scheme: dark;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; background: var(--bg); color: var(--text); }
   body {
     font: 15px/1.5 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-    padding: max(16px, env(safe-area-inset-top)) 16px 32px; max-width: 760px; margin: 0 auto;
+    -webkit-font-smoothing: antialiased;
+    padding: max(var(--gutter), env(safe-area-inset-top)) var(--gutter) 40px; max-width: 800px; margin: 0 auto;
   }
-  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 6px 2px 18px; flex-wrap: wrap; }
-  h1 { font-size: 24px; margin: 0; letter-spacing: -0.02em; }
-  h1 span { color: var(--accent); }
-  .host { color: var(--muted); font-size: 14px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 8px 0 24px; flex-wrap: wrap; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand img { width: 44px; height: 44px; border-radius: 22.5%; display: block; box-shadow: 0 0 0 1px var(--line); }
+  h1 { font-size: 26px; margin: 0; letter-spacing: -0.02em; line-height: 1.1; }
+  .tagline { color: var(--muted); font-size: 13px; }
   .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
-  section { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
-  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
-  .big { font-size: 19px; font-weight: 600; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-medium); padding: var(--gutter); }
+  h2 { font-size: 17px; font-weight: 700; margin: 0 0 10px; letter-spacing: -0.01em; }
+  .big { font-size: 20px; font-weight: 600; }
   .muted { color: var(--muted); }
-  .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  /* Connection pill: status dot and Muted text in a Panel capsule. */
+  .pill { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); padding: 6px 12px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
   .ok .dot { background: var(--ok); } .warn .dot { background: var(--warn); } .bad .dot { background: var(--bad); }
   dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; }
   dt { color: var(--muted); } dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
@@ -40,16 +48,35 @@
   a { color: var(--accent); }
   .alert { border-color: var(--bad); }
   .alert h2 { color: var(--bad); }
-  button {
-    font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
-    border-radius: 10px; padding: 9px 14px; min-height: 40px; cursor: pointer;
+  button, .button {
+    font: inherit; font-weight: 600; color: var(--text); background: var(--raised); border: 0;
+    border-radius: var(--r-medium); padding: 10px 18px; min-height: 44px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none;
+    transition: transform .12s ease, opacity .12s ease;
   }
-  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-  /* 24 h charts */
-  :root { --series: #3987e5; --series2: #d95926; --grid: #2a2e34; --axis: #3a3f46; }
-  @media (prefers-color-scheme: light) {
-    :root:not([data-theme="dark"]) { --series: #2a78d6; --series2: #eb6834; --grid: #e9e6df; --axis: #cfcac0; }
-  }
+  button:active, .button:active { transform: scale(.96); opacity: .8; }
+  button:focus-visible, .button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* Primary action: amber with an ink label. One per area. */
+  .primary { background: var(--accent); color: var(--on-accent); }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+  /* The app */
+  .app { display: grid; grid-template-columns: 1fr auto; gap: 16px 24px; align-items: center; }
+  .app .lead { display: flex; gap: 14px; align-items: center; margin-bottom: 12px; }
+  .app .lead img { width: 60px; height: 60px; border-radius: 22.5%; flex: none; }
+  .app .lead h2 { margin: 0; }
+  .app .lead p { margin: 2px 0 0; color: var(--muted); }
+  .app .button { width: 100%; max-width: 320px; }
+  .app .qr { text-align: center; color: var(--muted); font-size: 12.5px; }
+  .app .qr img { display: block; width: 132px; height: 132px; border-radius: var(--r-small); margin-bottom: 6px; image-rendering: pixelated; }
+  @media (max-width: 600px) { .app { grid-template-columns: 1fr; } .app .qr { display: none; } .app .button { max-width: none; } }
+  /* AirPlay on screen: an amber banner with ink text and a dark translucent Stop button. */
+  .banner { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  .banner h2, .banner .muted { color: var(--on-accent); }
+  .banner .muted { opacity: .8; }
+  .banner button { background: rgb(16 18 20 / .22); color: var(--on-accent); }
+  footer { margin-top: 28px; text-align: center; color: var(--muted); font-size: 12.5px; }
+  /* 24 h charts: amber for the measure, warm white for a second series. */
+  :root { --series: var(--accent); --series2: var(--text); --grid: var(--line); --axis: #3a3f46; }
   .wide { grid-column: 1 / -1; }
   .charts { display: grid; gap: 18px 20px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
   .chart-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 4px; }
@@ -83,7 +110,7 @@
   .events { list-style: none; padding: 0; margin: 6px 0 0; font-size: 13.5px; }
   .events li { display: grid; grid-template-columns: 3.4em 1fr; gap: 10px; margin: 5px 0; }
   .events time { color: var(--muted); font-variant-numeric: tabular-nums; }
-  h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 16px 0 4px; font-weight: 600; }
+  h3 { font-size: 15px; font-weight: 600; margin: 18px 0 4px; }
   .tip {
     position: absolute; top: 2px; pointer-events: none; white-space: nowrap;
     background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 3px 8px; font-size: 12.5px;
@@ -94,8 +121,14 @@
 </head>
 <body>
 <header>
-  <h1>Couch<span>OS</span></h1>
-  <div class="host" id="host">—</div>
+  <div class="brand">
+    <img src="icon.png" alt="" width="44" height="44">
+    <div>
+      <h1>CouchOS</h1>
+      <div class="tagline">Plex, AirPlay and a quiet dashboard for the TV</div>
+    </div>
+  </div>
+  <div class="pill warn" id="conn" role="status"><span class="dot"></span><span id="host">Looking for the TV box…</span></div>
 </header>
 
 <section class="alert" id="power" hidden style="margin-bottom:12px">
@@ -104,7 +137,24 @@
 </section>
 
 <div class="grid">
-  <section>
+  <section class="wide app" id="app">
+    <div>
+      <div class="lead">
+        <img src="icon.png" alt="CouchOS app icon" width="60" height="60">
+        <div>
+          <h2>The CouchOS remote</h2>
+          <p>Browse Plex, play on the TV and type with your phone keyboard.</p>
+        </div>
+      </div>
+      <div id="appaction"><span class="muted">Checking for the app…</span></div>
+    </div>
+    <div class="qr" id="appqr" hidden>
+      <img alt="QR code for the CouchOS app beta" width="132" height="132">
+      Scan with your iPhone camera
+    </div>
+  </section>
+
+  <section id="nowplaying">
     <h2>On the TV</h2>
     <div class="big" id="tv">—</div>
     <div class="muted" id="tvsub"></div>
@@ -114,7 +164,7 @@
   </section>
 
   <section>
-    <h2>Box</h2>
+    <h2>TV box</h2>
     <dl>
       <dt>Temperature</dt><dd id="temp">—</dd>
       <dt>Free memory</dt><dd id="mem">—</dd>
@@ -145,10 +195,9 @@
   </section>
 
   <section>
-    <h2>Remote control app</h2>
-    <p style="margin:0" id="appline"></p>
+    <h2>Using the remote</h2>
     <ol>
-      <li>The app finds this box automatically on the home Wi-Fi.</li>
+      <li>Install the app, then open it on the home Wi-Fi. It finds this TV box by itself.</li>
       <li>Swipe on the touchpad to move, tap to select, hold for the menu.</li>
       <li>The phone keyboard pops up whenever the TV asks for text.</li>
     </ol>
@@ -175,6 +224,8 @@
     </div>
   </section>
 </div>
+
+<footer>CouchOS <span id="footver"></span></footer>
 
 <script>
 const $ = (s) => document.querySelector(s);
@@ -203,6 +254,7 @@ async function loadInfo() {
   $("#mdns").textContent = `${i.hostname}.local`;
   $("#ips").textContent = i.addresses.join(", ") || "—";
   $("#ver").textContent = i.version;
+  $("#footver").textContent = i.version;
   $("#airplayname").textContent = i.airplay_name;
   $("#api").textContent = `http://${i.hostname}.local:${i.ports.api}/api`;
   $("#ssh").textContent = `ssh jdubec@${i.hostname}.local`;
@@ -212,33 +264,61 @@ async function loadInfo() {
   if (i.plex_url) {
     const a = document.createElement("a"); a.href = i.plex_url; a.textContent = new URL(i.plex_url).host; plex.append(a);
   } else plex.textContent = "—";
-  const app = $("#appline");
+  const app = $("#appaction");
   app.replaceChildren();
   if (i.app_url) {
-    const a = document.createElement("a"); a.href = i.app_url; a.textContent = "Install the CouchOS app"; app.append(a);
+    const a = Object.assign(document.createElement("a"), {
+      className: "button primary", href: i.app_url, target: "_blank", rel: "noopener",
+      textContent: "Get the app on TestFlight",
+    });
+    app.append(a);
+    loadAppQr(i.app_url);
   } else {
-    app.append("Not published yet. Build it from ", Object.assign(document.createElement("code"), { textContent: "repos/couchos-app" }), " in Xcode.");
+    app.append(Object.assign(document.createElement("span"), {
+      className: "muted", textContent: "The app isn't published yet. Build it from repos/couchos-app in Xcode.",
+    }));
   }
+}
+
+// dashd draws the app's QR code for the TV (widget "app"); reuse it for
+// desktop visitors. No widget, no QR: the button still works.
+async function loadAppQr(url) {
+  try {
+    const w = await fetch("/v1/widgets/app").then((r) => r.ok ? r.json() : null);
+    if (!w?.data?.svg || w.data.url !== url) return;
+    $("#appqr img").src = w.data.svg;
+    $("#appqr").hidden = false;
+  } catch {}
+}
+
+function connection(tone, text) {
+  $("#conn").className = `pill ${tone}`;
+  if (text) $("#host").textContent = text;
 }
 
 async function loadStatus() {
   try {
     render(await api("status"));
   } catch {
-    $("#tv").textContent = "Unreachable";
+    connection("bad", "Can't reach the TV box");
+    $("#tv").textContent = "Can't reach the TV box";
+    $("#tvsub").textContent = "Check that it's switched on and on the home Wi-Fi.";
   }
 }
 
 function render(s) {
+  connection("ok", $("#mdns").textContent !== "—" ? $("#mdns").textContent : "Connected");
   {
     const playing = s.kodi.playing;
     $("#airplayactions").hidden = !s.airplay.active;
+    $("#nowplaying").classList.toggle("banner", s.airplay.active);
     if (s.airplay.active) {
       $("#tv").textContent = "AirPlay";
       $("#tvsub").textContent = {
         audio: "A phone is playing music.",
         video: "A phone is playing a video.",
       }[s.airplay.kind] || "A phone is sharing its screen.";
+      $("#tvsub").textContent += " Stop to return to Plex.";
     } else if (!s.kodi.running) {
       $("#tv").textContent = "Starting…";
       $("#tvsub").textContent = "";
@@ -268,6 +348,7 @@ function subscribe() {
     render(JSON.parse(e.data));
   };
   es.onerror = () => {
+    connection("warn", "Reconnecting…");
     if (!fallback) fallback = setInterval(loadStatus, 10000);
   };
 }
@@ -307,9 +388,9 @@ function chartSpecs(m) {
   const memPct = m.mem_mb.map((v) => pct(v, m.mem_total_mb)), mem = stats(m.mem_mb);
   specs.push({
     title: "Memory in use", series: [{ values: memPct }], lo: 0, hi: 100, ticks: [0, 50, 100], unit: "%",
-    tip: (i) => `${m.mem_mb[i]} MB · ${memPct[i].toFixed(0)} %`,
+    tip: (i) => memPct[i] == null ? null : `${m.mem_mb[i]} MB · ${memPct[i].toFixed(0)} %`,
     now: mem && `${mem.last} MB`,
-    sub: mem && `of ${m.mem_total_mb} MB · peak ${mem.max} MB`,
+    sub: mem && (m.mem_total_mb ? `of ${m.mem_total_mb} MB · ` : "") + `peak ${mem.max} MB`,
   });
   const temp = stats(m.temp_c);
   if (temp) specs.push({
@@ -597,7 +678,10 @@ $("#restartkodi").onclick = (e) => {
   e.target.textContent = "Restarting…";
 };
 
-loadInfo().catch(() => {});
+loadInfo().catch(() => {
+  $("#appaction").replaceChildren(Object.assign(document.createElement("span"), { className: "muted", textContent: "Can't reach the TV box right now." }));
+});
+loadStatus();
 subscribe();
 loadMetrics();
 loadServices();

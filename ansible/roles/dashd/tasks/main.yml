@@ -6,6 +6,19 @@
   register: dashd_binary
   failed_when: not dashd_binary.stat.exists
 
+# A build older than its sources once shipped a dashd that served other keys
+# than the skin binds (the TV's daily forecast went blank). Rebuild first.
+- name: Check the dashd build is newer than its sources
+  delegate_to: localhost
+  become: false
+  ansible.builtin.find:
+    paths: "{{ playbook_dir }}/../dashd/src"
+    patterns: ["*.rs"]
+    recurse: true
+  register: dashd_sources
+  failed_when: >-
+    dashd_sources.files | selectattr('mtime', 'gt', dashd_binary.stat.mtime) | list | length > 0
+
 - name: dashd directory
   ansible.builtin.file:
     path: /opt/couchos/dashd

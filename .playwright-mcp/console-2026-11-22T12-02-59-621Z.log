@@ -1,0 +1,74 @@
+[  596976ms] [ERROR] Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING @ http://beelzebub-tv.local/api/events:1
+[  601125ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/events:1
+[  603194ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/metrics:1
+[  603194ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/services:1
+[  605290ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/events:1
+[  608190ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/status:1
+[  608437ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/events:1
+[  612627ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/events:1
+[  616820ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/events:1
+[  617018ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/status:1
+[  621014ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/events:1
+[  625209ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/events:1
+[  628115ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/status:1
+[  628367ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/events:1
+[  632548ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/events:1
+[  632756ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/services:1
+[  636742ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/events:1
+[  638109ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/status:1
+[  640937ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/events:1
+[  645132ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/events:1
+[  648111ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/status:1
+[  648370ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/events:1
+[  652503ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/events:1
+[  656664ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/events:1
+[  658237ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/status:1
+[  660858ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/events:1
+[  663139ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/metrics:1
+[  663139ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/services:1
+[  665052ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/events:1
+[  668201ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/status:1
+[  668415ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/events:1
+[  672550ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/events:1
+[  676696ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/events:1
+[  678159ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/status:1
+[  680830ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/events:1
+[  684976ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/events:1
+[  688124ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/status:1
+[  688372ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://beelzebub-tv.local/api/events:1
+[  692516ms] [ERROR] Access to resource at 'http://beelzebub-tv.local/api/events' from origin 'http://beelzebub-tv.local' has been blocked by CORS policy: The request client is not a secure context and the resource is in more-private address space `local`. @ http://beelzebub-tv.local/:1
+[  692518ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://beelzebub-tv.local/api/events:1
+[  692518ms] [ERROR] Access to fetch at 'http://beelzebub-tv.local/api/services' from origin 'http://beelzebub-tv.local' has been blocked by CORS policy: The request client is not a secure context and the resource is in more-private address space `local`. @ http://beelzebub-tv.local/:1
+[  692518ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://beelzebub-tv.local/api/services:1
+[  696978ms] [ERROR] Access to fetch at 'http://beelzebub-tv.local/api/status' from origin 'http://beelzebub-tv.local' has been blocked by CORS policy: The request client is not a secure context and the resource is in more-private address space `local`. @ http://beelzebub-tv.local/:1
+[  696978ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://beelzebub-tv.local/api/status:1
+[  706979ms] [ERROR] Access to fetch at 'http://beelzebub-tv.local/api/status' from origin 'http://beelzebub-tv.local' has been blocked by CORS policy: The request client is not a secure context and the resource is in more-private address space `local`. @ http://beelzebub-tv.local/:1
+[  706979ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://beelzebub-tv.local/api/status:1
+[  716980ms] [ERROR] Access to fetch at 'http://beelzebub-tv.local/api/status' from origin 'http://beelzebub-tv.local' has been blocked by CORS policy: The request client is not a secure context and the resource is in more-private address space `local`. @ http://beelzebub-tv.local/:1
+[  716980ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://beelzebub-tv.local/api/status:1
+[  721995ms] [ERROR] Access to fetch at 'http://beelzebub-tv.local/api/metrics' from origin 'http://beelzebub-tv.local' has been blocked by CORS policy: The request client is not a secure context and the resource is in more-private address space `local`. @ http://beelzebub-tv.local/:1
+[  721995ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://beelzebub-tv.local/api/metrics:1
+[  721995ms] [ERROR] Access to fetch at 'http://beelzebub-tv.local/api/services' from origin 'http://beelzebub-tv.local' has been blocked by CORS policy: The request client is not a secure context and the resource is in more-private address space `local`. @ http://beelzebub-tv.local/:1
+[  721995ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://beelzebub-tv.local/api/services:1
+[  726980ms] [ERROR] Access to fetch at 'http://beelzebub-tv.local/api/status' from origin 'http://beelzebub-tv.local' has been blocked by CORS policy: The request client is not a secure context and the resource is in more-private address space `local`. @ http://beelzebub-tv.local/:1
+[  726980ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://beelzebub-tv.local/api/status:1
+[  736980ms] [ERROR] Access to fetch at 'http://beelzebub-tv.local/api/status' from origin 'http://beelzebub-tv.local' has been blocked by CORS policy: The request client is not a secure context and the resource is in more-private address space `local`. @ http://beelzebub-tv.local/:1
+[  736980ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://beelzebub-tv.local/api/status:1
+[  746977ms] [ERROR] Access to fetch at 'http://beelzebub-tv.local/api/status' from origin 'http://beelzebub-tv.local' has been blocked by CORS policy: The request client is not a secure context and the resource is in more-private address space `local`. @ http://beelzebub-tv.local/:1
+[  746977ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://beelzebub-tv.local/api/status:1
+[  751994ms] [ERROR] Access to fetch at 'http://beelzebub-tv.local/api/services' from origin 'http://beelzebub-tv.local' has been blocked by CORS policy: The request client is not a secure context and the resource is in more-private address space `local`. @ http://beelzebub-tv.local/:1
+[  751994ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://beelzebub-tv.local/api/services:1
+[  756978ms] [ERROR] Access to fetch at 'http://beelzebub-tv.local/api/status' from origin 'http://beelzebub-tv.local' has been blocked by CORS policy: The request client is not a secure context and the resource is in more-private address space `local`. @ http://beelzebub-tv.local/:1
+[  756978ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://beelzebub-tv.local/api/status:1
+[  766984ms] [ERROR] Access to fetch at 'http://beelzebub-tv.local/api/status' from origin 'http://beelzebub-tv.local' has been blocked by CORS policy: The request client is not a secure context and the resource is in more-private address space `local`. @ http://beelzebub-tv.local/:1
+[  766984ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://beelzebub-tv.local/api/status:1
+[  776981ms] [ERROR] Access to fetch at 'http://beelzebub-tv.local/api/status' from origin 'http://beelzebub-tv.local' has been blocked by CORS policy: The request client is not a secure context and the resource is in more-private address space `local`. @ http://beelzebub-tv.local/:1
+[  776981ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://beelzebub-tv.local/api/status:1
+[  781995ms] [ERROR] Access to fetch at 'http://beelzebub-tv.local/api/metrics' from origin 'http://beelzebub-tv.local' has been blocked by CORS policy: The request client is not a secure context and the resource is in more-private address space `local`. @ http://beelzebub-tv.local/:1
+[  781995ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://beelzebub-tv.local/api/metrics:1
+[  781995ms] [ERROR] Access to fetch at 'http://beelzebub-tv.local/api/services' from origin 'http://beelzebub-tv.local' has been blocked by CORS policy: The request client is not a secure context and the resource is in more-private address space `local`. @ http://beelzebub-tv.local/:1
+[  781995ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://beelzebub-tv.local/api/services:1
+[  786979ms] [ERROR] Access to fetch at 'http://beelzebub-tv.local/api/status' from origin 'http://beelzebub-tv.local' has been blocked by CORS policy: The request client is not a secure context and the resource is in more-private address space `local`. @ http://beelzebub-tv.local/:1
+[  786979ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://beelzebub-tv.local/api/status:1
+[  796979ms] [ERROR] Access to fetch at 'http://beelzebub-tv.local/api/status' from origin 'http://beelzebub-tv.local' has been blocked by CORS policy: The request client is not a secure context and the resource is in more-private address space `local`. @ http://beelzebub-tv.local/:1
+[  796979ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://beelzebub-tv.local/api/status:1

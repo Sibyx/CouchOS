@@ -26,6 +26,7 @@ All notable changes to the CouchOS iOS app.
 - Connection help when no box is found, or when Local Network access is off (with a button to Settings). (build 1)
 - About section with version and build, and how to send beta feedback. (build 1)
 - Privacy manifest and export-compliance declaration, needed for TestFlight. (build 1)
+- Dashboard screen (Settings → Dashboard): send a message to the TV, keep a shared to-do list on it, and see the weather duck the TV is showing. (build 2)
 
 ### Changed
 - Bundle identifier is `dev.dubec.couchos`. (build 1)

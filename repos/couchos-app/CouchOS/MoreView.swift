@@ -21,6 +21,12 @@ struct MoreView: View {
                     if model.airplayActive {
                         Button("Stop AirPlay", role: .destructive) { model.stopAirPlay() }
                     }
+                    NavigationLink {
+                        DashboardView()
+                    } label: {
+                        Label("Dashboard: message & to-do", systemImage: "rectangle.3.group")
+                    }
+                    .disabled(!model.hasHost)
                 }
 
                 Section {

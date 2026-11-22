@@ -1,5 +1,8 @@
-//! Forecast from Open-Meteo (free, no key, ECMWF/ICON models): now, the next
-//! twelve hours in two-hour steps, and the next five days.
+//! Forecast from Open-Meteo (free, no key, ECMWF/ICON models): now, the rest
+//! of today in a few steps, the next days, and the duck dressed for it.
+//!
+//! The TV shows today only (now, high/low, rain, sun, the next hours, the
+//! duck). `data` keeps the next days for the phone and the web page.
 
 use std::time::Duration;
 
@@ -7,16 +10,23 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::clock::Date;
+use crate::duck::{self, Conditions, Duck, Sky};
 use crate::error::{Error, Result};
+use crate::svg;
 use crate::view;
 use crate::widget::{self, Ctx, Output, Refresh, View, Widget};
 
 const API: &str = "https://api.open-meteo.com/v1/forecast";
-const HOUR_STEP: usize = 2;
-const HOUR_SLOTS: usize = 6;
-const DAY_SLOTS: usize = 5;
+/// Columns the TV has for hours.
+const MAX_HOURS: usize = 6;
+const MAX_DAYS: usize = 7;
+/// The duck on the TV, in pixels (within Kodi's 540 px texture limit).
+const DUCK_PX: u32 = 512;
+const DUCK_PNG: &str = "duck-";
+const DUCK_SVG: &str = "ducksvg-";
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Params {
     place: String,
     latitude: f64,
@@ -25,37 +35,71 @@ struct Params {
     timezone: String,
     #[serde(default = "default_every")]
     every_minutes: u64,
+    /// The hour columns: every `hours_step` hours, `hours_count` of them.
+    #[serde(default = "default_hours_step")]
+    hours_step: usize,
+    #[serde(default = "default_hours_count")]
+    hours_count: usize,
+    /// Next days in `data` (not on the TV).
+    #[serde(default = "default_days")]
+    days: usize,
+    #[serde(default)]
+    duck: duck::Params,
 }
 
 fn default_timezone() -> String {
     "Europe/Bratislava".into()
 }
-
 fn default_every() -> u64 {
     15
+}
+fn default_hours_step() -> usize {
+    3
+}
+fn default_hours_count() -> usize {
+    4
+}
+fn default_days() -> usize {
+    5
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Layout {
+    hours_step: usize,
+    hours_count: usize,
+    days: usize,
 }
 
 pub struct Weather {
     place: String,
     url: String,
     every: Duration,
+    layout: Layout,
+    duck: Option<Duck>,
 }
 
 pub fn build(params: &Value) -> Result<Box<dyn Widget>> {
     let p: Params = widget::params("weather", params)?;
+    let layout = Layout {
+        hours_step: p.hours_step.clamp(1, 6),
+        hours_count: p.hours_count.clamp(1, MAX_HOURS),
+        days: p.days.min(MAX_DAYS),
+    };
+    let duck = Duck::build(p.duck)?;
+    let look_ahead = duck.as_ref().map_or(0, |d| d.look_ahead_hours);
     let url = format!(
         "{API}?latitude={}&longitude={}&timezone={}\
          &current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,relative_humidity_2m,is_day\
-         &hourly=temperature_2m,weather_code,precipitation_probability,is_day\
+         &hourly=temperature_2m,apparent_temperature,weather_code,precipitation_probability,is_day\
          &daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset\
          &forecast_hours={}&forecast_days={}",
         p.latitude,
         p.longitude,
         p.timezone.replace('/', "%2F"),
-        HOUR_STEP * HOUR_SLOTS + 1,
-        DAY_SLOTS + 1,
+        (layout.hours_step * layout.hours_count).max(look_ahead) + 1,
+        layout.days + 1,
     );
-    Ok(Box::new(Weather { place: p.place, url, every: Duration::from_secs(p.every_minutes.max(5) * 60) }))
+    Ok(Box::new(Weather { place: p.place, url, every: Duration::from_secs(p.every_minutes.max(5) * 60), layout, duck }))
 }
 
 // --- Open-Meteo's response (only what is used) ---------------------------------
@@ -77,10 +121,13 @@ struct Current {
     is_day: u8,
 }
 
+/// Index 0 is the current hour.
 #[derive(Deserialize)]
 struct Hourly {
     time: Vec<String>,
     temperature_2m: Vec<Option<f64>>,
+    #[serde(default)]
+    apparent_temperature: Vec<Option<f64>>,
     weather_code: Vec<Option<u8>>,
     precipitation_probability: Vec<Option<u8>>,
     #[serde(default)]
@@ -213,14 +260,51 @@ fn at<T: Copy>(values: &[Option<T>], i: usize) -> Option<T> {
     values.get(i).copied().flatten()
 }
 
+/// What the duck dresses for: the coldest "feels like" and the worst sky
+/// from now to `ahead` hours on. An hour's rain or snow counts only from
+/// `min_chance` %, so an unlikely shower does not bring the umbrella.
+fn conditions(r: &Response, ahead: usize, min_chance: u8) -> Conditions {
+    let c = &r.current;
+    let h = &r.hourly;
+    let span = 0..=ahead.min(h.time.len().saturating_sub(1));
+    let mut sky = Sky::of(c.weather_code);
+    let mut feels = c.apparent_temperature;
+    let mut rain: Option<u8> = None;
+    for i in span {
+        let chance = at(&h.precipitation_probability, i);
+        if let Some(p) = chance {
+            rain = Some(rain.map_or(p, |r| r.max(p)));
+        }
+        if let Some(code) = at(&h.weather_code, i) {
+            let hour_sky = Sky::of(code);
+            if !hour_sky.wet() || chance.is_none_or(|p| p >= min_chance) {
+                sky = sky.max(hour_sky);
+            }
+        }
+        if let Some(t) = at(&h.apparent_temperature, i) {
+            feels = feels.min(t);
+        }
+    }
+    Conditions {
+        sky,
+        night: c.is_day == 0,
+        temp: c.temperature_2m,
+        feels,
+        high: at(&r.daily.temperature_2m_max, 0),
+        low: at(&r.daily.temperature_2m_min, 0),
+        rain_chance: rain.or_else(|| at(&r.daily.precipitation_probability_max, 0)),
+        wind_kmh: c.wind_speed_10m,
+    }
+}
+
 impl Forecast {
-    fn from_response(place: &str, r: Response) -> Result<Self> {
+    fn from_response(place: &str, r: Response, layout: Layout) -> Result<Self> {
         let d = &r.daily;
         if d.time.is_empty() || r.hourly.time.is_empty() {
             return Err(Error::upstream("open-meteo: empty forecast"));
         }
-        let hours = (1..=HOUR_SLOTS)
-            .map(|n| n * HOUR_STEP)
+        let hours = (1..=layout.hours_count)
+            .map(|n| n * layout.hours_step)
             .take_while(|&i| i < r.hourly.time.len())
             .map(|i| Hour {
                 time: clock_time(&r.hourly.time[i]),
@@ -230,7 +314,7 @@ impl Forecast {
                 is_day: at(&r.hourly.is_day, i).is_none_or(|d| d == 1),
             })
             .collect();
-        let days = (1..d.time.len().min(DAY_SLOTS + 1))
+        let days = (1..d.time.len().min(layout.days + 1))
             .map(|i| {
                 let code = at(&d.weather_code, i);
                 Day {
@@ -268,25 +352,21 @@ impl Forecast {
         })
     }
 
-    /// Display strings: whole degrees, an icon per slot, precipitation only
-    /// when it is worth a glance. Three lines for "now", then two rows.
+    /// Display strings for today: whole degrees, an icon per slot,
+    /// precipitation only when it is worth a glance.
     fn view(&self) -> View {
         let n = &self.now;
         let t = &self.today;
-        let mut summary = format!("Feels like {}  ·  High {}  ·  Low {}", deg(Some(n.feels_like)), deg(t.high), deg(t.low));
-        if let Some(p) = chance(t.rain_chance) {
-            summary.push_str(&format!("  ·  Precip. {p}"));
-        }
         let mut view = view! {
             "place" => self.place,
             "temp" => deg(Some(n.temperature)),
             "condition" => n.condition,
             "icon" => icon(Some(n.code), n.is_day),
-            "summary" => summary,
-            "detail" => format!(
-                "Wind {} km/h  ·  Humidity {} %  ·  Sun {} – {}",
-                n.wind_kmh.round(), n.humidity.round(), t.sunrise, t.sunset
-            ),
+            "feels" => format!("Feels like {}", deg(Some(n.feels_like))),
+            "highlow" => format!("{} / {}", deg(t.high), deg(t.low)),
+            "rain" => chance(t.rain_chance).map_or_else(String::new, |p| format!("{p} rain")),
+            "wind" => format!("Wind {} km/h", n.wind_kmh.round()),
+            "sun" => format!("{} – {}", t.sunrise, t.sunset),
         };
         for (i, h) in self.hours.iter().enumerate() {
             let k = i + 1;
@@ -294,14 +374,6 @@ impl Forecast {
             view.insert(format!("hour{k}.icon"), icon(h.code, h.is_day).to_owned());
             view.insert(format!("hour{k}.temp"), deg(h.temperature));
             view.insert(format!("hour{k}.rain"), chance(h.rain_chance).unwrap_or_default());
-        }
-        for (i, d) in self.days.iter().enumerate() {
-            let k = i + 1;
-            view.insert(format!("day{k}.name"), d.weekday.to_owned());
-            view.insert(format!("day{k}.icon"), icon(d.code, true).to_owned());
-            view.insert(format!("day{k}.high"), deg(d.high));
-            view.insert(format!("day{k}.low"), deg(d.low));
-            view.insert(format!("day{k}.rain"), chance(d.rain_chance).unwrap_or_default());
         }
         view
     }
@@ -317,6 +389,31 @@ fn chance(chance: Option<u8>) -> Option<String> {
     chance.filter(|&p| p >= 20).map(|p| format!("{p} %"))
 }
 
+impl Weather {
+    /// The duck as files named by their content: the PNG for Kodi, the SVG
+    /// for everyone else. Rendered only when the picture changes.
+    fn draw_duck(&self, ctx: &Ctx, conditions: &Conditions, duck: &Duck) -> Result<(Value, View)> {
+        let look = duck.dress(conditions);
+        let source = look.svg();
+        let hash = svg::content_hash(&source);
+        let (png, svg_name) = (format!("{DUCK_PNG}{hash}.png"), format!("{DUCK_SVG}{hash}.svg"));
+        if !ctx.assets.exists(&png) {
+            ctx.assets.put(&png, &svg::png(&source, DUCK_PX, DUCK_PX)?)?;
+            ctx.assets.put(&svg_name, source.as_bytes())?;
+            ctx.assets.prune(DUCK_PNG, &png)?;
+            ctx.assets.prune(DUCK_SVG, &svg_name)?;
+        }
+        let mut data = look.data();
+        data["image"] = json!(format!("/v1/assets/{png}"));
+        data["svg"] = json!(format!("/v1/assets/{svg_name}"));
+        let view = view! {
+            "duck" => format!("/v1/assets/{png}"),
+            "tip" => look.tip,
+        };
+        Ok((data, view))
+    }
+}
+
 impl Widget for Weather {
     fn kind(&self) -> &'static str {
         "weather"
@@ -328,31 +425,55 @@ impl Widget for Weather {
 
     fn refresh(&self, ctx: &Ctx) -> Result<Refresh> {
         let response: Response = serde_json::from_value(ctx.http.get_json(&self.url)?)?;
-        let forecast = Forecast::from_response(&self.place, response)?;
-        Ok(Refresh::Changed(Output::new(json!(forecast), forecast.view())))
+        let conditions = self.duck.as_ref().map(|d| (conditions(&response, d.look_ahead_hours, d.min_chance), d));
+        let forecast = Forecast::from_response(&self.place, response, self.layout)?;
+        let mut data = json!(forecast);
+        let mut view = forecast.view();
+        // The duck is a bonus: if it cannot be drawn, the forecast still
+        // shows (the skin hides the duck and its bubble when empty).
+        if let Some((c, duck)) = conditions {
+            match self.draw_duck(ctx, &c, duck) {
+                Ok((duck_data, duck_view)) => {
+                    data["duck"] = duck_data;
+                    view.extend(duck_view);
+                }
+                Err(err) => crate::log::warn(&format!("weather: the duck: {err}")),
+            }
+        }
+        Ok(Refresh::Changed(Output::new(data, view)))
     }
 }
 
+/// An Open-Meteo answer, for tests here and the skin contract test.
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    pub const SAMPLE: &str = r#"{"current":{"time":"2026-11-22T02:00","temperature_2m":2.0,"apparent_temperature":-0.4,"weather_code":0,"wind_speed_10m":6.2,"relative_humidity_2m":75,"is_day":0},
-      "hourly":{"time":["2026-11-22T02:00","2026-11-22T03:00","2026-11-22T04:00","2026-11-22T05:00","2026-11-22T06:00"],
-                "temperature_2m":[2.0,1.7,1.7,2.8,3.0],"weather_code":[0,2,3,3,61],"precipitation_probability":[0,0,10,30,null]},
+pub const SAMPLE: &str = r#"{"current":{"time":"2026-11-22T02:00","temperature_2m":2.0,"apparent_temperature":-0.4,"weather_code":0,"wind_speed_10m":6.2,"relative_humidity_2m":75,"is_day":0},
+      "hourly":{"time":["2026-11-22T02:00","2026-11-22T03:00","2026-11-22T04:00","2026-11-22T05:00","2026-11-22T06:00","2026-11-22T07:00","2026-11-22T08:00"],
+                "temperature_2m":[2.0,1.7,1.7,2.8,3.0,3.2,3.5],"apparent_temperature":[-0.4,-1.2,-1.6,0.1,0.5,0.8,1.0],
+                "weather_code":[0,2,61,3,71,3,3],"precipitation_probability":[0,0,10,30,60,null,0]},
       "daily":{"time":["2026-11-22","2026-11-23","2026-11-24"],"weather_code":[3,3,77],"temperature_2m_max":[6.0,4.2,3.7],
                "temperature_2m_min":[1.6,0.7,-0.6],"precipitation_probability_max":[5,3,75],
                "sunrise":["2026-11-22T07:08","2026-11-23T07:09","2026-11-24T07:11"],"sunset":["2026-11-22T16:06","2026-11-23T16:05","2026-11-24T16:04"]}}"#;
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testing::{FakeFetch, ctx_at};
+
+    const LAYOUT: Layout = Layout { hours_step: 3, hours_count: 4, days: 5 };
+
+    fn response() -> Response {
+        serde_json::from_str(SAMPLE).unwrap()
+    }
+
     fn forecast() -> Forecast {
-        Forecast::from_response("Staré Mesto", serde_json::from_str(SAMPLE).unwrap()).unwrap()
+        Forecast::from_response("Staré Mesto", response(), LAYOUT).unwrap()
     }
 
     #[test]
-    fn picks_two_hour_steps_and_future_days() {
+    fn picks_hour_steps_and_future_days() {
         let f = forecast();
         let times: Vec<_> = f.hours.iter().map(|h| h.time.as_str()).collect();
-        assert_eq!(times, ["04:00", "06:00"]);
+        assert_eq!(times, ["05:00", "08:00"]);
         assert_eq!(f.days.len(), 2);
         assert_eq!(f.days[0].weekday, "Mon");
         assert_eq!(f.days[1].condition, "Snow grains");
@@ -360,20 +481,56 @@ mod tests {
     }
 
     #[test]
-    fn view_is_display_ready() {
+    fn view_is_today_and_display_ready() {
         let v = forecast().view();
         assert_eq!(v["temp"], "2°");
         assert_eq!(v["icon"], "31"); // clear, at night
-        assert_eq!(v["summary"], "Feels like 0°  ·  High 6°  ·  Low 2°");
-        assert_eq!(v["detail"], "Wind 6 km/h  ·  Humidity 75 %  ·  Sun 07:08 – 16:06");
-        assert_eq!(v["hour1.rain"], "");
+        assert_eq!(v["feels"], "Feels like 0°");
+        assert_eq!(v["highlow"], "6° / 2°");
+        assert_eq!(v["rain"], "");
+        assert_eq!(v["sun"], "07:08 – 16:06");
+        assert_eq!(v["hour1.rain"], "30 %");
         assert_eq!(v["hour1.icon"], "26");
-        assert_eq!(v["hour2.temp"], "3°");
-        assert_eq!(v["hour2.icon"], "11");
-        assert_eq!(v["day2.high"], "4°");
-        assert_eq!(v["day2.low"], "-1°");
-        assert_eq!(v["day2.icon"], "13");
-        assert_eq!(v["day2.rain"], "75 %");
+        assert_eq!(v["hour2.temp"], "4°");
+        assert!(!v.keys().any(|k| k.starts_with("day")), "the TV shows today only");
+    }
+
+    #[test]
+    fn the_duck_looks_ahead_but_ignores_unlikely_rain() {
+        let r = response();
+        // 02:00-05:00: the rain at 04:00 is only 10 %, so it does not count;
+        // the overcast at 05:00 does.
+        let c = conditions(&r, 3, 30);
+        assert_eq!(c.sky, Sky::Cloudy);
+        assert_eq!(c.feels, -1.6);
+        assert_eq!(c.rain_chance, Some(30));
+        assert!(c.night);
+        // 06:00 brings likely snow.
+        assert_eq!(conditions(&r, 4, 30).sky, Sky::Snow);
+        assert_eq!(conditions(&r, 3, 5).sky, Sky::Rain);
+    }
+
+    #[test]
+    fn refresh_draws_the_duck_once_per_look() {
+        let fake = FakeFetch::new().json("open-meteo", serde_json::from_str(SAMPLE).unwrap());
+        let ctx = ctx_at(fake, Date { year: 2026, month: 11, day: 22 });
+        let w = build(&json!({"place": "Here", "latitude": 48.1, "longitude": 17.1, "duck": {"look_ahead_hours": 4}})).unwrap();
+        let Refresh::Changed(out) = w.refresh(&ctx).unwrap() else { panic!() };
+        let image = out.view["duck"].clone();
+        assert!(image.starts_with("/v1/assets/duck-") && image.ends_with(".png"), "{image}");
+        assert!(ctx.assets.exists(image.trim_start_matches("/v1/assets/")));
+        assert_eq!(out.view["tip"], "Snow! 2° to 6°. Boots on");
+        assert_eq!(out.data["duck"]["sky"], "snow");
+        assert_eq!(out.data["duck"]["outfit"]["coat"], "winter_jacket");
+        let svg = out.data["duck"]["svg"].as_str().unwrap().trim_start_matches("/v1/assets/").to_owned();
+        assert!(ctx.assets.exists(&svg));
+        // the same weather again: the same files
+        let Refresh::Changed(again) = w.refresh(&ctx).unwrap() else { panic!() };
+        assert_eq!(again.view["duck"], image);
+
+        let off = build(&json!({"place": "Here", "latitude": 48.1, "longitude": 17.1, "duck": {"enabled": false}})).unwrap();
+        let Refresh::Changed(out) = off.refresh(&ctx).unwrap() else { panic!() };
+        assert!(!out.view.contains_key("duck"));
     }
 
     #[test]
@@ -388,5 +545,11 @@ mod tests {
     fn unknown_codes_have_no_label() {
         assert_eq!(condition(42), "");
         assert_eq!(condition(95), "Thunderstorm");
+    }
+
+    #[test]
+    fn params_are_checked() {
+        assert!(build(&json!({"place": "x", "latitude": 1, "longitude": 2, "hours": 3})).is_err());
+        assert!(build(&json!({"place": "x", "latitude": 1, "longitude": 2, "duck": {"colors": {"duck": "red"}}})).is_err());
     }
 }

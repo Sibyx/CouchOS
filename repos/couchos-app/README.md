@@ -6,6 +6,27 @@
 
 <p align="center">The remote for your CouchOS TV box: browse Plex on the phone, play it on the TV.</p>
 
+<p align="center">
+  <a href="https://couchos.dubec.dev">Website</a> ·
+  <a href="#beta">TestFlight beta</a> ·
+  <a href="CHANGELOG.md">Changelog</a> ·
+  <a href="docs/BRAND.md">Style manual</a> ·
+  <a href="docs/PRIVACY.md">Privacy</a>
+</p>
+
+<p align="center">
+  <img src="marketing/out/appstore-header.png" alt="CouchOS: your Plex library in your hand, the big screen does the rest">
+</p>
+
+<table>
+  <tr>
+    <td align="center" width="25%"><img src="marketing/out/appstore-01.png" alt="Plex home rows"><br><sub><b>Your library, in your hand</b></sub></td>
+    <td align="center" width="25%"><img src="marketing/out/appstore-02.png" alt="Movie detail with Play on TV"><br><sub><b>Play on TV in one tap</b></sub></td>
+    <td align="center" width="25%"><img src="marketing/out/appstore-03.png" alt="Touchpad remote"><br><sub><b>A remote that feels right</b></sub></td>
+    <td align="center" width="25%"><img src="marketing/out/appstore-04.png" alt="Movie poster grid"><br><sub><b>Every library, every poster</b></sub></td>
+  </tr>
+</table>
+
 ---
 
 CouchOS turns a Raspberry Pi into the TV's whole world: Plex in kiosk mode,
@@ -120,6 +141,8 @@ The Plex catalog from couchd's index on the box:
 | `Config/ExportOptions.plist` | `xcodebuild -exportArchive` settings for App Store Connect upload |
 | `scripts/release.py` | Version, build and changelog: `show`, `bump`, `set-version`, `check`, `notes`, `release` |
 | `scripts/make-icon.swift` | Draws the app icon |
+| `scripts/make-marketing.swift` | Composes the App Store screenshots, header and social card from `marketing/raw/` into `marketing/out/` |
+| `marketing/` | App Store copy ([APPSTORE.md](marketing/APPSTORE.md)), raw captures and the generated visuals used in this README |
 | `docs/BRAND.md` | Style manual: name, icon, colour, type, components, words |
 | `docs/PRIVACY.md` | Privacy policy, to host at couchos.dubec.dev/privacy |
 | `CHANGELOG.md` · `RELEASING.md` | What changed in each build, and how a build reaches testers |

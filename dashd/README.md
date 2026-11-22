@@ -1,6 +1,8 @@
 # dashd
 
-The CouchOS dashboard daemon. Gathers widget data (clock, weather, the frog of the day) and serves it to every client: the TV, the phone app, the web page, anything on the LAN. No auth, like couchd.
+The CouchOS dashboard daemon. Gathers widget data (clock, today's weather with a duck dressed for it, a message and TODO list written from the app, the frog of the day, the app's QR code) and serves it to every client: the TV, the phone app, the web page, anything on the LAN. No auth, like couchd.
+
+On the TV, three columns on black: time, date, today's weather and the TODO list on the left; the duck, its line in a yellow bubble and the message in the middle; the frog and the QR code on the right. Empty cards are hidden.
 
 ```
  Open-Meteo ─┐                 ┌─ GET /v1/views/tv ─► screensaver.couchos.dashboard (Kodi draws it)
@@ -20,11 +22,13 @@ The CouchOS dashboard daemon. Gathers widget data (clock, weather, the frog of t
 | `store.rs` | Latest output per widget; response bodies serialized once per change, shared as `Arc<[u8]>`, version = ETag |
 | `scheduler.rs` | One thread, sleeps until the earliest due widget or an API "refresh now"; backoff 30 s → 15 min on failure, old data kept and marked `stale` |
 | `notify.rs` | `Notifier` trait; `KodiNotifier` (JSON-RPC `NotifyAll`). More listeners (SSE, MQTT) plug in here |
+| `duck.rs` | The duck: config rules turn the weather into an outfit, then SVG blocks (sky, ground, rain/snow, the duck, each garment) are layered into one picture |
+| `svg.rs` | SVG → PNG (resvg; shapes only, no fonts). Kodi cannot draw SVG, so pictures are rasterized once per change and served as files named by their content hash |
 | `net.rs`, `clock.rs`, `assets.rs`, `state.rs` | Ports to the outside world (HTTP out, local time, files served, JSON kept across restarts), each a small type or trait so widgets are testable with `testing.rs` fakes |
 | `http.rs` | The API (below). Routing is a plain function, tested without sockets |
 | `config.rs` | `dashd.json` (Ansible renders it from `dashd_widgets`); no file = the default Bratislava dashboard |
 
-Lean by design: a 1.8 MB binary for the Pi; 9.7 MB resident measured on macOS, which counts shared system libraries (on the Pi, check `systemctl --user status dashd`). It uses 4 crates (serde, serde_json, tiny_http, ureq/rustls). Idle, it uses no CPU: no ticking, the scheduler sleeps until the next refresh, and the TV re-reads only when notified. Unchanged polls get a bodiless 304. Photos are streamed from disk, not held in RAM. Release builds use LTO, `panic=abort` and are stripped. The unit sets `MALLOC_ARENA_MAX=1` and `MemoryMax=32M`.
+Lean by design: a 2.6 MB binary for the Pi (1.8 MB before the SVG rasterizer); 9.7 MB resident measured on macOS, which counts shared system libraries (on the Pi, check `systemctl --user status dashd`). It uses 6 crates (serde, serde_json, tiny_http, ureq/rustls, resvg without text or raster images, qrcodegen). A duck picture (a 512 px PNG) is rendered only when the outfit or sky changes, and only the current one is kept. Idle, it uses no CPU: no ticking, the scheduler sleeps until the next refresh, and the TV re-reads only when notified. Unchanged polls get a bodiless 304. Photos are streamed from disk, not held in RAM. Release builds use LTO, `panic=abort` and are stripped. The unit sets `MALLOC_ARENA_MAX=1` and `MemoryMax=32M`.
 
 ## API
 
@@ -35,7 +39,7 @@ GET  /v1/views/tv              {version, properties: {"weather.temp": "2°", "fr
 GET  /v1/widgets/{id}          one envelope
 POST /v1/widgets/{id}          JSON input for pushed/stateful widgets (405 for the others)
 POST /v1/widgets/{id}/refresh  poll it now
-GET  /v1/assets/{name}         files widgets serve (frog-<date>.jpg; a new name each day)
+GET  /v1/assets/{name}         files widgets serve (frog-<date>.jpg, duck-<hash>.png/.svg, qr-<hash>.png; a new name whenever the picture changes)
 ```
 
 All JSON answers carry `ETag`. Send `If-None-Match` to get a 304. Through Caddy the same paths are on port 80 (`http://beelzebub-tv.local/v1/dashboard`).
@@ -43,7 +47,21 @@ All JSON answers carry `ETag`. Send `If-None-Match` to get a 304. Through Caddy 
 ## Widgets
 
 - **clock**: the TV draws it from Kodi's own time (`$INFO[System.Time(HH:mm)]`), so it costs nothing. The widget places it on the dashboard and names the timezone.
-- **weather**: Open-Meteo, no API key, every 15 min: now, the next 12 h in 2-hour steps, and 5 days. The TV view maps WMO codes to Kodi's stock icon set (`resource.images.weathericons.default`, day and night variants) and shows precipitation from 20 %. Params: `place`, `latitude`, `longitude`, `timezone`, `every_minutes`.
+- **weather**: Open-Meteo, no API key, every 15 min: now, the next hours, the next days, and the duck. The TV shows **today only** (now, feels like, high/low, rain, sunrise–sunset, "next hours" columns, the duck and its line); `data.days` keeps the next days for other clients. WMO codes map to Kodi's stock icon set (`resource.images.weathericons.default`, day and night variants); precipitation shows from 20 %. Params: `place`, `latitude`, `longitude`, `timezone`, `every_minutes` (15), `hours_step` (3), `hours_count` (4, max 6), `days` (5), `duck` (below).
+- **the duck** (`weather.params.duck`): dressed for now and the next `look_ahead_hours` (3): the coldest "feels like" and the worst sky in that window, where an hour's rain or snow counts from `min_chance` % (30). Rules run in order; each one whose `when` holds puts items on slots, a later rule wins a slot, `none` empties it, and the last matching `say` is the duck's line. The defaults are in `default_rules()` in `src/duck.rs`: sun hat, sunglasses and ice cream from 26°; a cap from 18°; a sweater below 18°; a scarf below 10°; a beanie and winter jacket below 3°; mittens and boots below -3°; raincoat, rain hat, umbrella and boots in rain; everything warm in snow; a lantern in fog. The scene follows the sky (sun, moon and stars, clouds, rain, snow on the ground, lightning, fog bands, wind lines and a flying scarf from `windy_kmh`, 30).
+  - `extra_rules`: appended to the defaults. `rules`: replace them.
+  - A rule: `{"when": {...}, "wear": {slot: item}, "say": "..."}`. `when` (all optional, all must hold): `feels_below`, `feels_at_least`, `sky` (list of `clear`, `partly_cloudy`, `cloudy`, `fog`, `drizzle`, `rain`, `freezing_rain`, `snow`, `storm`), `rain_chance_at_least`, `wind_at_least`, `night`. `say` fills in `{temp}`, `{feels}`, `{high}`, `{low}`, `{rain_chance}`, `{wind}`.
+  - Slots and items: `head` (beanie, cap, sun_hat, rain_hat), `face` (sunglasses), `neck` (scarf), `top` (sweater), `coat` (winter_jacket, raincoat), `hands` (mittens), `feet` (boots), `held` (umbrella, ice_cream, lantern). A wrong slot is a config error at start.
+  - `colors`: `{"duck": "#FFD23F", "scarf": "#E63946", ...}`; every name is in `PALETTE` in `src/duck.rs`. `enabled: false` removes the duck.
+  - `data.duck` has the outfit, the sky, the line, and both pictures (`image` PNG, `svg`). `DUCK_PREVIEW=/dir cargo test duck::tests::preview -- --ignored` renders a gallery of typical days.
+- **board**: a message and a TODO list, written from the app (Settings → Dashboard) or anything that can POST. Kept in `$XDG_STATE_HOME/dashd/<name>.json`, so a restart keeps it. Every answer is the whole board:
+  ```
+  POST /v1/widgets/board  {"op": "message", "text": "Dinner at 7?", "from": "Jakub"}   ("text": "" takes it down)
+                          {"op": "add", "text": "Buy milk"}        {"op": "done", "id": 3}   ("done": false reopens)
+                          {"op": "edit", "id": 3, "text": "..."}   {"op": "remove", "id": 3}   {"op": "clear_done"}
+  ```
+  The TV lists open items first, then done ones dimmed for `keep_done_hours` (12); the app keeps them until cleared. Text is one line per item (80 chars), the message up to 280 chars; on the TV, `[` `]` are shown as `(` `)` (Kodi markup) and emoji are dropped (Kodi's fonts have none). Params: `name` ("board"), `rows` (6), `keep_done_hours`, `message_hours` (0 = until replaced).
+- **qr**: a QR code drawn once at start, at a whole number of pixels per module so it stays crisp. The TV's `app` widget points at the app's TestFlight invite (`app_build_url` in Ansible); an empty `url` hides it. Params: `url`, `title`, `subtitle`.
 - **frog**: one of ~7,900 Anura species on iNaturalist each day. The pick is a hash of the local date, so it is the same frog after a restart. It shows the Latin name, common name, family, IUCN status, a Wikipedia summary and a CC-licensed photo with its attribution; photos without a licence are skipped. The TV gets a shorter summary: whole sentences up to about 170 characters, without the opening "… is a species of frog in the family …". `data.summary` keeps the full text. The pick and its photo are saved, so the day costs three API calls. Param: `taxon_id` (default 20979, Anura).
 
 ## Adding a widget
@@ -51,9 +69,10 @@ All JSON answers carry `ETag`. Send `If-None-Match` to get a 304. Through Caddy 
 1. `src/widgets/<kind>.rs`: a `build(&Value) -> Result<Box<dyn Widget>>` and an `impl Widget`. Implement only what applies:
    - **Polled** (a web API): `next_refresh` + `refresh`.
    - **Pushed** (the weather station POSTs readings): `handle`. Return the new `Output` and dashd stores it, bumps the version and notifies Kodi. Keep the last reading with `ctx.state` so a restart shows it.
-   - **Stateful with commands** (TODO from the app): `handle` takes `{"op": "add", "text": ...}` / `{"op": "done", "id": ...}`, updates its list in `ctx.state`, and returns the whole list. `initial` loads it at start.
+   - **Stateful with commands** (like `board`): `handle` takes `{"op": ...}`, updates its state in `ctx.state`, and returns the whole output. `initial` loads it at start. `handle` runs on HTTP threads beside the scheduler, so keep the state behind a `Mutex`.
 2. Add it to `KINDS` in `src/widgets/mod.rs` and to `dashd_widgets` in `ansible/group_vars/all.yml`.
-3. For the TV: put its `view` keys in `screensaver-couchos-dashboard.xml` as `$INFO[Window.Property(<id>.<key>)]`. The phone and web read `data` instead.
+3. For the TV: put its `view` keys in `screensaver-couchos-dashboard.xml` as `$INFO[Window.Property(<id>.<key>)]`, and add the widget to the fixture in `widgets::skin_contract`: that test fails when the skin binds a key dashd does not serve (an empty slot on the TV otherwise fails silently). The phone and web read `data` instead.
+4. Rebuild (`./build.sh`) before the playbook: it refuses a build older than `src/`.
 
 ```sh
 cargo test                # unit tests, macOS or Linux
@@ -64,7 +83,6 @@ cargo run                 # serves the default dashboard on :8766 (DASHD_CONFIG=
 ## Ideas for later
 
 - **Home**: the weather station (indoor/outdoor temperature, humidity, CO₂, pressure trend) beside the forecast; "open a window" when CO₂ is high.
-- **TODO / shopping list**: edited from the app, done items fade out on the TV.
 - **Getting around**: next trams and buses from the nearest stop (IDS BK / DPB departures), with "leave in 4 min".
 - **Calendar**: today's events from a shared iCal/CalDAV feed; birthdays and name days (meniny: the Slovak name-day calendar).
 - **Air and sky**: air quality (Open-Meteo's air-quality API: PM2.5, pollen in spring), UV index, sunrise and sunset as a day arc, moon phase.

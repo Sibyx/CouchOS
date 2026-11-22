@@ -7,6 +7,7 @@
 mod assets;
 mod clock;
 mod config;
+mod duck;
 mod error;
 mod http;
 mod hub;
@@ -16,6 +17,7 @@ mod notify;
 mod scheduler;
 mod state;
 mod store;
+mod svg;
 #[cfg(test)]
 mod testing;
 mod widget;

@@ -121,19 +121,43 @@ uxplay_args: >-
   -artp "pt=96 ! udpsink host=127.0.0.1 port=5002"
 
 # --- TV dashboard (dashd + screensaver.couchos.dashboard) ----------------------
-# The idle screen: clock, weather, the frog of the day. dashd/build.sh builds
-# the binary. The Kodi add-on finds dashd's port in its config file.
+# The idle screen: clock, today's weather with the duck dressed for it, the
+# message and TODO list from the app, the frog of the day, the app's QR code.
+# dashd/build.sh builds the binary (the playbook refuses a build older than
+# dashd/src). The Kodi add-on finds dashd's port in its config file.
 dashboard_enabled: true
-dashd_version: 0.1.0
+dashd_version: 0.2.0
 dashd_dist: "{{ playbook_dir }}/../dashd/dist/dashd-{{ dashd_version }}-trixie-arm64"
 dashd_port: 8766
-# Widgets in display order: {id, kind, params}. Kinds: clock, weather, frog.
+# Widgets: {id, kind, params}. The TV skin binds these ids (clock, weather,
+# frog, board, app); every param is documented in dashd/README.md.
 dashd_widgets:
   - {id: clock, kind: clock, params: {timezone: Europe/Bratislava}}
   - id: weather
     kind: weather
-    params: {place: "Bratislava · Staré Mesto", latitude: 48.1437, longitude: 17.1066, timezone: Europe/Bratislava}
+    params:
+      place: "Bratislava · Staré Mesto"
+      latitude: 48.1437
+      longitude: 17.1066
+      timezone: Europe/Bratislava
+      hours_step: 3          # the "later today" columns: every 3 h ...
+      hours_count: 4         # ... four of them (max 6)
+      duck:
+        look_ahead_hours: 3  # dress for now and the next 3 hours
+        min_chance: 30       # rain/snow in an hour counts from 30 %
+        windy_kmh: 30        # the scarf flies from here
+        # extra_rules run after the defaults, later rules win a slot:
+        # extra_rules:
+        #   - {when: {night: true, sky: [clear]}, say: "Look at the stars!"}
+        #   - {when: {feels_below: 0}, wear: {held: none}}
+        # colors: {duck: "#FFD23F", scarf: "#E63946", winter_jacket: "#3D5A80"}
   - {id: frog, kind: frog}
+  - id: board
+    kind: board
+    params: {rows: 6, keep_done_hours: 12, message_hours: 0}
+  - id: app
+    kind: qr
+    params: {url: "{{ app_build_url }}", title: "CouchOS app", subtitle: "Scan to join the beta"}
 
 # --- control plane -----------------------------------------------------------
 couchd_port: 8765
@@ -145,9 +169,9 @@ couchd_art_cache_mb: 16384
 couchd_disk_reserve_mb: 2048
 # systemd journal cap on the SD card.
 journal_max_use: 200M
-# Shown on the dashboard. An iOS app can't be installed from a plain link:
-# put a TestFlight invite here once there is one.
-app_build_url: ""
+# The app's TestFlight public invite: the web page links it and the TV
+# dashboard shows it as a QR code (widget "app"). Empty hides both.
+app_build_url: "https://testflight.apple.com/join/Ur8dT4mb"
 plex_url: https://plex.nase.zbytocnosti.sk
 web_port: 80
 caddy_image: docker.io/library/caddy:2.10-alpine

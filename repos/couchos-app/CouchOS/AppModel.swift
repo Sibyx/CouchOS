@@ -142,6 +142,8 @@ final class AppModel {
 
     /// The control plane, once there is a box to talk to.
     var couchd: Couchd? { host.isEmpty ? nil : Couchd(host: host) }
+    /// The TV dashboard's data (message, TODO list, the duck).
+    var dashd: Dashd? { host.isEmpty ? nil : Dashd(host: host) }
 
     /// No box yet: nothing found over Bonjour and nothing typed in.
     var hasHost: Bool { !host.isEmpty }
@@ -449,8 +451,9 @@ final class AppModel {
         run { let _: OK = try await $0.post("tv", ["power": power]) }
     }
 
-    /// Clock, weather and the frog of the day on the TV now (it is also the
-    /// TV's idle screen). Wakes the TV; any key goes back to Plex.
+    /// The dashboard (clock, the duck and today's weather, the message and
+    /// TODO list, the frog) on the TV now; it is also the TV's idle screen.
+    /// Wakes the TV; any key goes back to Plex.
     func showDashboard() {
         thud.impactOccurred()
         guard let couchd else { return }

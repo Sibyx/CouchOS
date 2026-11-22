@@ -1,0 +1,12 @@
+// The app's version: the one source of truth. Do not set these in the
+// Xcode target editor (that writes an override into project.pbxproj).
+// Change them with scripts/release.py, see CHANGELOG.md and RELEASING.md.
+//
+// MARKETING_VERSION     CFBundleShortVersionString, semantic version X.Y.Z.
+//                       Changes only when a version bump is decided.
+// CURRENT_PROJECT_VERSION  CFBundleVersion, the build number. One integer that
+//                       goes up by 1 with every change to the app and never
+//                       resets, so every upload to App Store Connect is unique.
+
+MARKETING_VERSION = 0.1.0
+CURRENT_PROJECT_VERSION = 1

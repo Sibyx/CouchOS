@@ -20,6 +20,7 @@ __pycache__/
 xcuserdata/
 DerivedData/
 *.xcuserstate
+/repos/couchos-app/build/
 
 # Ansible
 *.retry

@@ -19,7 +19,9 @@ struct BrowseView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                if !query.trimmingCharacters(in: .whitespaces).isEmpty {
+                if !model.hasHost {
+                    ConnectionHelp().containerRelativeFrame(.vertical)
+                } else if !query.trimmingCharacters(in: .whitespaces).isEmpty {
                     SearchResults(results: results, query: query, searching: searching) { remember(query) }
                 } else if isSearchFocused {
                     RecentSearches(recents: recents) { query = $0 } clear: { recentStore = "" }
@@ -28,12 +30,12 @@ struct BrowseView: View {
                 }
             }
             .scrollDismissesKeyboard(.immediately)
-            .background(Color.black.ignoresSafeArea())
+            .background(Brand.ink.ignoresSafeArea())
             .navigationTitle("Plex")
             .navigationDestination(for: PlexItem.self) { ItemView(item: $0) }
             .navigationDestination(for: PlexSection.self) { SectionView(section: $0) }
             .navigationDestination(for: IndexRoute.self) { _ in IndexView() }
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { IndexButton() } }
+            .toolbar { if model.hasHost { ToolbarItem(placement: .topBarTrailing) { IndexButton() } } }
             .safeAreaInset(edge: .top, spacing: 0) { SyncBar() }
             .searchable(text: $query, isPresented: $searchPresented, prompt: "Movies, shows, episodes, cast")
             .searchScopes($scope, activation: .onSearchPresentation) {
@@ -41,9 +43,10 @@ struct BrowseView: View {
             }
             .onSubmit(of: .search) { remember(query) }
             .task(id: "\(query)|\(scope.rawValue)") { await search() }
-            .task { if !loaded { await load() } }
+            // Loads once per box: on first show, and when a box is found or changed.
+            .task(id: model.host) { if loadedHost != model.host { await load() } }
             .refreshable { await load() }
-            .overlay { if !loaded && error == nil { ProgressView() } }
+            .overlay { if model.hasHost && !loaded && error == nil { ProgressView() } }
             .onChange(of: model.status?.catalog?.state) { old, new in
                 // A sync just finished: the rows may have changed.
                 if old == "syncing", new != "syncing" { Task { await load() } }
@@ -52,6 +55,8 @@ struct BrowseView: View {
     }
 
     @State private var searchPresented = false
+    /// The box the rows on screen came from.
+    @State private var loadedHost: String?
     private var isSearchFocused: Bool { searchPresented }
 
     @ViewBuilder private var home: some View {
@@ -63,6 +68,9 @@ struct BrowseView: View {
                     Text(error)
                 } actions: {
                     Button("Try again") { Task { await load() } }
+                        .buttonStyle(.borderedProminent)
+                        .foregroundStyle(Brand.onAmber)
+                    Button("Connection settings") { model.showSettings = true }
                 }
             }
             ForEach(hubs) { hub in PosterRow(title: hub.title, items: hub.items) }
@@ -104,6 +112,14 @@ struct BrowseView: View {
 
     private func load() async {
         guard let couchd = model.couchd else { return }
+        if loadedHost != model.host {
+            // Another box: drop the old one's rows rather than mixing them.
+            hubs = []
+            sections = []
+            loaded = false
+            error = nil
+        }
+        loadedHost = model.host
         do {
             async let hubs = couchd.plexHubs()
             async let sections = couchd.plexSections()
@@ -143,7 +159,7 @@ private struct IndexButton: View {
             case "syncing":
                 Image(systemName: "arrow.triangle.2.circlepath").symbolEffect(.rotate, options: .repeat(.continuous))
             case "error":
-                Image(systemName: "exclamationmark.arrow.triangle.2.circlepath").foregroundStyle(.yellow)
+                Image(systemName: "exclamationmark.arrow.triangle.2.circlepath").foregroundStyle(Brand.warn)
             default:
                 Image(systemName: "externaldrive.badge.checkmark")
             }
@@ -160,16 +176,16 @@ private struct SyncBar: View {
         if let catalog = model.status?.catalog, catalog.state == "syncing" {
             VStack(spacing: 4) {
                 if let fraction = catalog.fraction {
-                    ProgressView(value: fraction).tint(.orange)
+                    ProgressView(value: fraction).tint(Brand.amber)
                 } else {
-                    ProgressView(value: 0).tint(.orange).opacity(0.4)
+                    ProgressView(value: 0).tint(Brand.amber).opacity(0.4)
                 }
                 if let label = catalog.label {
                     Text(label).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
             .padding(.horizontal, 16).padding(.bottom, 6)
-            .background(.black)
+            .background(Brand.ink)
             .transition(.opacity)
         }
     }
@@ -268,13 +284,13 @@ struct PosterCard: View {
             PlexArtwork(path: item.poster)
                 .overlay(alignment: .bottom) {
                     if let progress = item.progress {
-                        ProgressView(value: progress).tint(.orange).padding(6)
+                        ProgressView(value: progress).tint(Brand.amber).padding(6)
                     }
                 }
                 .overlay(alignment: .topTrailing) {
                     if let unwatched = item.unwatchedCount, unwatched > 0 {
                         Text("\(unwatched)").font(.caption2.bold()).padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(Capsule().fill(.orange)).foregroundStyle(.black).padding(5)
+                            .background(Capsule().fill(Brand.amber)).foregroundStyle(Brand.onAmber).padding(5)
                     } else if item.watched == true {
                         Image(systemName: "checkmark.circle.fill").font(.caption)
                             .foregroundStyle(.white, .black.opacity(0.6)).padding(5)
@@ -306,14 +322,14 @@ struct ItemRow: View {
                     Text(item.title).lineLimit(1)
                     Text(item.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     if let progress = item.progress {
-                        ProgressView(value: progress).tint(.orange).frame(maxWidth: 120)
+                        ProgressView(value: progress).tint(Brand.amber).frame(maxWidth: 120)
                     }
                 }
                 Spacer(minLength: 0)
                 if item.watched == true { Image(systemName: "checkmark.circle.fill").foregroundStyle(.secondary) }
                 if item.isPlayable {
                     Button { model.playOnTV(item) } label: {
-                        Image(systemName: "play.circle.fill").font(.title).foregroundStyle(.orange)
+                        Image(systemName: "play.circle.fill").font(.title).foregroundStyle(Brand.amber)
                     }
                     .buttonStyle(.borderless)
                     .accessibilityLabel("Play \(item.title) on TV")
@@ -376,7 +392,7 @@ private struct ItemPreview: View {
             if !item.subtitle.isEmpty { Text(item.subtitle).font(.subheadline).foregroundStyle(.secondary) }
         }
         .padding(12)
-        .background(Color(white: 0.1))
+        .background(Brand.panel)
     }
 }
 
@@ -401,7 +417,7 @@ struct ItemView: View {
                 if let cast = shown.cast, !cast.isEmpty {
                     Text(cast.joined(separator: ", ")).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 }
-                if let error { Text(error).font(.footnote).foregroundStyle(.red) }
+                if let error { Text(error).font(.footnote).foregroundStyle(Brand.bad) }
                 if let children = shown.children, !children.isEmpty {
                     VStack(alignment: .leading, spacing: 0) {
                         Text(shown.type == "show" ? "Seasons" : "Episodes").font(.title3.bold()).padding(.bottom, 4)
@@ -418,7 +434,7 @@ struct ItemView: View {
                 .mask(LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom))
                 .ignoresSafeArea()
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Brand.ink.ignoresSafeArea())
         .navigationTitle(shown.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -457,7 +473,7 @@ struct ItemView: View {
                 Text(facts).font(.caption).foregroundStyle(.secondary)
                 if shown.transcodes {
                     Label("HEVC: Plex converts it for the TV", systemImage: "arrow.triangle.2.circlepath")
-                        .font(.caption).foregroundStyle(.orange)
+                        .font(.caption).foregroundStyle(Brand.amber)
                 }
             }
         }
@@ -469,7 +485,7 @@ struct ItemView: View {
                 Button { model.playOnTV(shown) } label: {
                     Label(resumeLabel(shown), systemImage: "play.fill").frame(maxWidth: .infinity, minHeight: 34)
                 }
-                .buttonStyle(.borderedProminent).tint(.orange).foregroundStyle(.black)
+                .buttonStyle(.borderedProminent).tint(Brand.amber).foregroundStyle(Brand.onAmber)
                 if shown.inProgress {
                     Button { model.playOnTV(shown, fromStart: true) } label: {
                         Label("Play from the start", systemImage: "backward.end.fill").frame(maxWidth: .infinity, minHeight: 30)
@@ -489,7 +505,7 @@ struct ItemView: View {
                         }
                         .frame(maxWidth: .infinity, minHeight: 40)
                     }
-                    .buttonStyle(.borderedProminent).tint(.orange).foregroundStyle(.black)
+                    .buttonStyle(.borderedProminent).tint(Brand.amber).foregroundStyle(Brand.onAmber)
                 }
                 Button { model.playOnTV(shown) } label: {
                     Label("Open on TV", systemImage: "tv").frame(maxWidth: .infinity, minHeight: 30)
@@ -585,10 +601,10 @@ struct SectionView: View {
                 }
             }
             .padding(16)
-            if let error { Text(error).font(.footnote).foregroundStyle(.red).padding() }
+            if let error { Text(error).font(.footnote).foregroundStyle(Brand.bad).padding() }
             if loading { ProgressView().padding() }
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Brand.ink.ignoresSafeArea())
         .navigationTitle(section.title)
         .toolbar {
             Menu {

@@ -284,7 +284,7 @@ struct PlexArtwork: View {
     var body: some View {
         let height = Int(CGFloat(width) / aspect)
         // The fixed-ratio box sets the size; the image fills it and is clipped.
-        Color(white: 0.14)
+        Brand.panel
             .aspectRatio(aspect, contentMode: .fit)
             .overlay {
                 AsyncImage(url: model.couchd?.plexArt(path, width: width, height: height),
@@ -292,10 +292,10 @@ struct PlexArtwork: View {
                     if let image = phase.image {
                         image.resizable().scaledToFill()
                     } else {
-                        Image(systemName: "film").foregroundStyle(Color(white: 0.3))
+                        Image(systemName: "film").foregroundStyle(Brand.faint)
                     }
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Brand.Radius.small, style: .continuous))
     }
 }

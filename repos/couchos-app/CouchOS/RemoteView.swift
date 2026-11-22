@@ -2,34 +2,39 @@ import SwiftUI
 
 struct RemoteView: View {
     @Environment(AppModel.self) private var model
-    @State private var showMore = false
 
     var body: some View {
         @Bindable var model = model
         VStack(spacing: 14) {
             header
-            if model.airplayActive { airplayBanner } else { nowPlaying }
-            Touchpad()
+            if model.hasHost {
+                if model.airplayActive { airplayBanner } else { nowPlaying }
+                Touchpad()
+            } else {
+                ConnectionHelp()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Brand.panel, in: RoundedRectangle(cornerRadius: Brand.Radius.large, style: .continuous))
+            }
             controls
             transport
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Brand.gutter)
         .padding(.bottom, 8)
-        .background(Color.black.ignoresSafeArea())
+        .background(Brand.ink.ignoresSafeArea())
         .animation(.snappy(duration: 0.2), value: model.airplayActive)
-        .sheet(isPresented: $showMore) { MoreView() }
+        .animation(.snappy(duration: 0.2), value: model.hasHost)
         .sheet(item: $model.keyboard) { request in KeyboardSheet(request: request) }
-        .alert("CouchOS", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(model.message ?? "")
-        }
     }
 
     private var header: some View {
         HStack(spacing: 8) {
-            Circle().fill(dotColor).frame(width: 8, height: 8)
-            Text(connectionLabel).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+            HStack(spacing: 6) {
+                Circle().fill(dotColor).frame(width: 7, height: 7)
+                Text(connectionLabel).font(.footnote).foregroundStyle(Brand.muted).lineLimit(1)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .background(Brand.panel, in: Capsule())
+            .accessibilityElement(children: .combine)
             Spacer()
             Menu {
                 Section("Open on TV") {
@@ -42,7 +47,7 @@ struct RemoteView: View {
                 Image(systemName: "square.grid.2x2").font(.title3).frame(width: 44, height: 44)
             }
             .accessibilityLabel("Open on TV")
-            Button { showMore = true } label: {
+            Button { model.showSettings = true } label: {
                 Image(systemName: "slider.horizontal.3").font(.title3).frame(width: 44, height: 44)
             }
             .accessibilityLabel("TV, sound and Bluetooth")
@@ -56,9 +61,9 @@ struct RemoteView: View {
                 if let playing = model.nowPlaying {
                     Text(playing.title).font(.headline).lineLimit(1)
                     Text(playing.subtitle.isEmpty ? " " : playing.subtitle)
-                        .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                        .font(.subheadline).foregroundStyle(Brand.muted).lineLimit(1)
                 } else {
-                    Text("On the TV").font(.caption).foregroundStyle(.secondary)
+                    Text("On the TV").font(.caption).foregroundStyle(Brand.muted)
                     Text(model.focus ?? "Plex").font(.headline).lineLimit(1)
                         .contentTransition(.opacity)
                 }
@@ -80,12 +85,12 @@ struct RemoteView: View {
             Spacer()
             Button("Stop") { model.stopAirPlay() }
                 .buttonStyle(.borderedProminent)
-                .tint(.black.opacity(0.35))
+                .tint(Brand.onAmber.opacity(0.35))
         }
-        .foregroundStyle(.black)
+        .foregroundStyle(Brand.onAmber)
         .padding(12)
         .frame(minHeight: 48)
-        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.orange))
+        .background(RoundedRectangle(cornerRadius: Brand.Radius.medium, style: .continuous).fill(Brand.amber))
     }
 
     private var airplayTitle: String {
@@ -123,14 +128,18 @@ struct RemoteView: View {
     }
 
     private var dotColor: Color {
-        switch model.kodiState {
-        case .ready: .green
-        case .connecting: .yellow
-        default: .red
+        if !model.hasHost { return model.localNetworkDenied ? Brand.bad : Brand.warn }
+        return switch model.kodiState {
+        case .ready: Brand.ok
+        case .connecting: Brand.warn
+        default: Brand.bad
         }
     }
 
     private var connectionLabel: String {
+        if !model.hasHost {
+            return model.localNetworkDenied ? "Local Network access is off" : "Looking for your box…"
+        }
         if model.kodiState != .ready, model.status?.kodi.running == false {
             return "TV app is starting… · \(model.host)"
         }
@@ -159,14 +168,17 @@ struct Touchpad: View {
     private let step: CGFloat = 34
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 28, style: .continuous)
-            .fill(Color(white: 0.11))
+        RoundedRectangle(cornerRadius: Brand.Radius.large, style: .continuous)
+            .fill(Brand.panel)
+            .overlay {
+                RoundedRectangle(cornerRadius: Brand.Radius.large, style: .continuous)
+                    .strokeBorder(Brand.line, lineWidth: 1)
+            }
             .overlay {
                 VStack(spacing: 6) {
-                    Image(systemName: "hand.draw").font(.largeTitle)
-                    Text("Swipe to move · tap to select · hold for menu").font(.caption)
+                    Image(systemName: "hand.draw").font(.largeTitle).foregroundStyle(Brand.faint)
+                    Text("Swipe to move · tap to select · hold for menu").font(.caption).foregroundStyle(Brand.muted)
                 }
-                .foregroundStyle(Color(white: 0.3))
             }
             .contentShape(Rectangle())
             .gesture(drag)
@@ -237,10 +249,10 @@ struct RemoteButton: View {
             Image(systemName: symbol)
                 .font(compact ? .body : .title2)
                 .frame(maxWidth: .infinity, minHeight: compact ? 26 : 60)
-                .foregroundStyle(prominent ? Color.black : Color.white)
+                .foregroundStyle(prominent ? Brand.onAmber : Brand.text)
                 .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(prominent ? Color.orange : Color(white: 0.15))
+                    RoundedRectangle(cornerRadius: Brand.Radius.medium, style: .continuous)
+                        .fill(prominent ? Brand.amber : Brand.raised)
                 )
         }
         .buttonStyle(PressStyle())

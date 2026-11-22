@@ -12,11 +12,12 @@ struct MoreView: View {
             Form {
                 Section("TV") {
                     HStack {
-                        Button("Turn on") { model.tv("on") }
+                        Button { model.tv("on") } label: { Label("Turn on", systemImage: "power") }
                         Spacer()
-                        Button("Standby") { model.tv("standby") }
+                        Button { model.tv("standby") } label: { Label("Standby", systemImage: "moon.zzz") }
                     }
                     .buttonStyle(.borderless)
+                    .disabled(!model.hasHost)
                     if model.airplayActive {
                         Button("Stop AirPlay", role: .destructive) { model.stopAirPlay() }
                     }
@@ -43,7 +44,7 @@ struct MoreView: View {
                         HStack {
                             VStack(alignment: .leading) {
                                 Text(device.name)
-                                if device.connected { Text("Connected").font(.caption).foregroundStyle(.green) }
+                                if device.connected { Text("Connected").font(.caption).foregroundStyle(Brand.ok) }
                             }
                             Spacer()
                             if !device.paired {
@@ -66,33 +67,51 @@ struct MoreView: View {
                 }
 
                 Section {
-                    TextField("Found automatically", text: $hostField)
+                    TextField("Found automatically", text: $hostField, prompt: Text("couchos.local or 192.168.1.20"))
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
+                        .submitLabel(.done)
                         .onSubmit { model.pinHost(hostField) }
                     Button("Restart Kodi", role: .destructive) { model.restartKodi() }
+                        .disabled(!model.hasHost)
                 } header: {
-                    Text("Device")
+                    Text("TV box")
                 } footer: {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(model.hostPinned ? "Using this host. Clear it to find the TV box automatically."
-                                              : "Found automatically: \(model.host). Type a host to use another.")
+                        Text(hostFooter)
                         if let system = model.status?.system {
                             Text("\(system.tempC.map { String(format: "%.0f °C", $0) } ?? "–") · \(system.memAvailableMb) MB free")
                         }
                     }
                 }
+
+                Section {
+                    LabeledContent("Version", value: AppVersion.display)
+                        .monospacedDigit()
+                        .textSelection(.enabled)
+                } header: {
+                    Text("About")
+                } footer: {
+                    Text("Beta feedback: take a screenshot and share it to TestFlight, or open TestFlight → CouchOS → Send Beta Feedback. Mention the version above.")
+                }
             }
             .navigationTitle("CouchOS")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .errorAlert(model)
             .task {
                 hostField = model.hostPinned ? model.host : ""
                 await model.refreshBluetooth()
                 await model.refreshStatus()
             }
         }
+    }
+
+    private var hostFooter: String {
+        if model.hostPinned { return "Using this address. Clear it to find the TV box automatically." }
+        if model.hasHost { return "Found automatically: \(model.host). Type an address to use another." }
+        return "Not found yet. It's found automatically on the same Wi-Fi, or type its address."
     }
 
     private var speakers: [BluetoothState.Device] {

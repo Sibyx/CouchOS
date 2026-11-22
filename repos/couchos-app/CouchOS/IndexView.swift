@@ -63,7 +63,7 @@ struct IndexView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(job.label).font(.caption).lineLimit(2)
                         if let fraction = job.fraction {
-                            ProgressView(value: fraction).tint(.orange)
+                            ProgressView(value: fraction).tint(Brand.amber)
                             Text("\(job.done.formatted()) of \(job.total.formatted())")
                                 .font(.caption2).foregroundStyle(.secondary).monospacedDigit()
                         } else {
@@ -76,7 +76,7 @@ struct IndexView: View {
                     Text("\(catalog.queued) more queued").font(.caption2).foregroundStyle(.secondary)
                 }
                 if let error = catalog.error, catalog.jobs.isEmpty {
-                    Text(error).font(.caption).foregroundStyle(.red)
+                    Text(error).font(.caption).foregroundStyle(Brand.bad)
                 }
             }
             .padding(.vertical, 4)
@@ -120,7 +120,7 @@ struct IndexView: View {
                 Gauge(value: Double(catalog.art.bytes), in: 0...Double(max(catalog.art.limitBytes, 1))) {
                     EmptyView()
                 }
-                .tint(.orange)
+                .tint(Brand.amber)
                 HStack {
                     Text("\(Int64(catalog.art.bytes).formatted(.byteCount(style: .file))) of \(Int64(catalog.art.limitBytes).formatted(.byteCount(style: .file)))")
                     Spacer()
@@ -149,14 +149,14 @@ struct IndexView: View {
     @ViewBuilder private func statusIcon(_ catalog: CatalogStatus) -> some View {
         switch catalog.state {
         case "syncing":
-            Image(systemName: "arrow.triangle.2.circlepath").foregroundStyle(.orange)
+            Image(systemName: "arrow.triangle.2.circlepath").foregroundStyle(Brand.amber)
                 .symbolEffect(.rotate, options: .repeat(.continuous))
         case "error":
-            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Brand.warn)
         case "empty":
             Image(systemName: "hourglass").foregroundStyle(.secondary)
         default:
-            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(Brand.ok)
         }
     }
 
@@ -177,7 +177,7 @@ struct IndexView: View {
         if let full = catalog.fullSyncedAt {
             parts.append("full sync \(relative(full))")
         }
-        return parts.isEmpty ? "The first sync starts shortly after couchd starts." : parts.joined(separator: " · ")
+        return parts.isEmpty ? "The first sync starts shortly after the TV box starts." : parts.joined(separator: " · ")
     }
 
     private func load() async {
@@ -225,7 +225,7 @@ private struct LibraryRow: View {
             })) {
                 VStack(alignment: .leading, spacing: 2) {
                     Label(section.title, systemImage: section.symbol)
-                    Text(state).font(.caption).foregroundStyle(section.status == "error" ? .red : .secondary)
+                    Text(state).font(.caption).foregroundStyle(section.status == "error" ? AnyShapeStyle(Brand.bad) : AnyShapeStyle(.secondary))
                 }
             }
             if section.isEnabled {
@@ -242,7 +242,7 @@ private struct LibraryRow: View {
                 Button("Full sync") {
                     act("Full sync of \(section.title)") { try await $0.catalogSync(section: section.key, full: true) }
                 }
-                .tint(.orange)
+                .tint(Brand.amberDeep)
                 Button("Artwork") {
                     act("Saving artwork for \(section.title)") { try await $0.catalogArt(section: section.key, fetch: true) }
                 }

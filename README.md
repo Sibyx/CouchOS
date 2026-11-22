@@ -36,6 +36,7 @@ A minimal media appliance for a **Raspberry Pi 3B+** driving a Samsung TV over H
 | `couchd/` | Control daemon (Python stdlib only) |
 | `dashd/` | Dashboard daemon (Rust): widget data for the TV and the phone. `build.sh` → `dashd/dist/` |
 | `web/` | Web UI (single static page) |
+| `repos/couchos-app/` | iOS remote app (SwiftUI, `dev.dubec.couchos`): [README](repos/couchos-app/README.md), [changelog](repos/couchos-app/CHANGELOG.md), [style manual](repos/couchos-app/docs/BRAND.md) |
 
 ## 1. Build the base image (on the Mac)
 

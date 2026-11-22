@@ -5,13 +5,34 @@ import Network
 /// address once, so later connections skip mDNS lookups entirely.
 final class Discovery {
     var onFound: ((String) -> Void)?
+    /// false: iOS refuses Local Network access (Settings → CouchOS), so
+    /// nothing on the LAN can be found or reached. true once browsing works.
+    var onAccess: ((Bool) -> Void)?
+
+    /// The last box found, kept so clearing a typed-in host can go straight back to it.
+    private(set) var found: String?
 
     private var browser: NWBrowser?
     private var probe: NWConnection?
 
+    /// dns_sd's kDNSServiceErr_PolicyDenied: the user said no to Local Network.
+    private static let policyDenied: Int32 = -65570
+
     func start() {
         guard browser == nil else { return }
         let browser = NWBrowser(for: .bonjour(type: "_couchos._tcp", domain: nil), using: .tcp)
+        browser.stateUpdateHandler = { [weak self] state in
+            MainActor.assumeIsolated {
+                switch state {
+                case .ready:
+                    self?.onAccess?(true)
+                case .waiting(let error), .failed(let error):
+                    if case .dns(let code) = error, code == Self.policyDenied { self?.onAccess?(false) }
+                default:
+                    break
+                }
+            }
+        }
         browser.browseResultsChangedHandler = { [weak self] results, _ in
             MainActor.assumeIsolated { self?.resolve(results) }
         }
@@ -38,6 +59,7 @@ final class Discovery {
             MainActor.assumeIsolated {
                 guard let self, case .ready = state else { return }
                 if case let .hostPort(host, _)? = conn.currentPath?.remoteEndpoint, let address = Self.address(host) {
+                    self.found = address
                     self.onFound?(address)
                 }
                 conn.cancel()

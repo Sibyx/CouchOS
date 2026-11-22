@@ -79,10 +79,16 @@ final class AppModel {
     var tab: AppTab = .browse
 
     // Connection
+    /// The TV box's address. Empty until Bonjour finds one (or one is typed in).
     var host: String {
         didSet { UserDefaults.standard.set(host, forKey: "host") }
     }
     private(set) var kodiState: KodiLink.State = .idle
+    /// iOS refuses Local Network access: nothing can be found or reached
+    /// until it is allowed in Settings.
+    private(set) var localNetworkDenied = false
+    /// The TV, sound, Bluetooth and device sheet (from Remote, or the connection help).
+    var showSettings = false
 
     // State shown in the UI
     private(set) var nowPlaying: NowPlaying?
@@ -116,20 +122,29 @@ final class AppModel {
     private let thud = UIImpactFeedbackGenerator(style: .medium)
     private var poll: Task<Void, Never>?
     private var focusQuery: Task<Void, Never>?
+    /// The host the links were last opened to.
+    private var connectedHost: String?
 
     init() {
-        host = UserDefaults.standard.string(forKey: "host") ?? "beelzebub-tv.local"
+        host = UserDefaults.standard.string(forKey: "host") ?? ""
         kodi.onState = { [weak self] state in self?.kodiStateChanged(state) }
         kodi.onNotification = { [weak self] method, params in self?.kodiNotification(method, params) }
+        discovery.onAccess = { [weak self] allowed in self?.localNetworkDenied = !allowed }
         discovery.onFound = { [weak self] address in
+            guard let self else { return }
+            self.localNetworkDenied = false
             // A host typed in by hand stays until it is cleared.
-            guard let self, !self.hostPinned, address != self.host else { return }
+            guard !self.hostPinned, address != self.host else { return }
             self.host = address
             self.reconnect()
         }
     }
 
-    var couchd: Couchd? { Couchd(host: host) }
+    /// The control plane, once there is a box to talk to.
+    var couchd: Couchd? { host.isEmpty ? nil : Couchd(host: host) }
+
+    /// No box yet: nothing found over Bonjour and nothing typed in.
+    var hasHost: Bool { !host.isEmpty }
 
     /// Set when the host was typed in (More → Device); Bonjour then leaves it alone.
     private(set) var hostPinned = UserDefaults.standard.bool(forKey: "hostPinned") {
@@ -140,7 +155,7 @@ final class AppModel {
     func pinHost(_ text: String) {
         let text = text.trimmingCharacters(in: .whitespaces)
         hostPinned = !text.isEmpty
-        host = text.isEmpty ? "beelzebub-tv.local" : text
+        host = text.isEmpty ? (discovery.found ?? "") : text
         reconnect()
     }
 
@@ -150,26 +165,6 @@ final class AppModel {
         tap.prepare()
         discovery.start()
         reconnect()
-        poll?.cancel()
-        poll = Task { [weak self] in
-            // couchd pushes a status snapshot on every change (Server-Sent
-            // Events); no polling. Reconnect with backoff if it drops.
-            var backoff = 1.0
-            while !Task.isCancelled {
-                guard let self, let couchd = self.couchd else { return }
-                do {
-                    for try await status in couchd.events() {
-                        self.status = status
-                        backoff = 1
-                    }
-                } catch {
-                    if Task.isCancelled { return }
-                }
-                await self.refreshStatus()
-                try? await Task.sleep(for: .seconds(backoff))
-                backoff = min(backoff * 2, 15)
-            }
-        }
     }
 
     func deactivate() {
@@ -178,8 +173,41 @@ final class AppModel {
         kodi.disconnect()
     }
 
+    /// (Re)open both links to the current host: Kodi's socket and couchd's
+    /// status stream. With no host yet, wait for Bonjour.
     func reconnect() {
+        poll?.cancel()
+        if connectedHost != host {
+            // Another box (or none): what was shown belongs to the old one.
+            // Coming back to the app on the same box keeps it, so nothing flickers.
+            status = nil
+            audio = nil
+            nowPlaying = nil
+            connectedHost = host
+        }
+        guard hasHost, let couchd else {
+            kodi.disconnect()
+            return
+        }
         kodi.connect(host: host)
+        poll = Task { [weak self] in
+            // couchd pushes a status snapshot on every change (Server-Sent
+            // Events); no polling. Reconnect with backoff if it drops.
+            var backoff = 1.0
+            while !Task.isCancelled {
+                do {
+                    for try await status in couchd.events() {
+                        self?.status = status
+                        backoff = 1
+                    }
+                } catch {
+                    if Task.isCancelled { return }
+                }
+                await self?.refreshStatus()
+                try? await Task.sleep(for: .seconds(backoff))
+                backoff = min(backoff * 2, 15)
+            }
+        }
     }
 
     // MARK: Kodi (low-latency path)

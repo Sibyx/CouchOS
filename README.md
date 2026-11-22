@@ -144,8 +144,10 @@ The app's Browse tab shows the Plex catalog. **Play** makes Plex on the TV (PM4K
 
 ## Limits of the hardware
 
-- **No HEVC/H.265 hardware decoding on the Pi 3.** Software 1080p x265 stutters. Let the Plex server transcode those files (PM4K → Settings → set a max bitrate/quality so HEVC is converted to H.264), or keep H.264 copies.
-- 1080p H.264 at up to ~40 Mbit/s plays well. For 50/60 fps judder, uncomment `core_freq_min=500` in `/boot/firmware/config.txt`.
+- **No HEVC/H.265 or VC-1 hardware decoding on the Pi 3.** In software, 1080p HEVC took Kodi to ~350 % CPU and dropped frames. Ansible therefore sets PM4K's *Allowed codecs* to none (`pm4k_enforced.allowed_codecs` in `group_vars/all.yml`): the Plex server converts HEVC and VC-1 to H.264, which plays in hardware at ~130 % CPU. This needs a server that allows (and keeps up with) transcoding.
+- 1080p H.264 at up to ~40 Mbit/s plays well locally. From the current remote server the Pi gets ~30 Mbit/s, which still direct-plays 25 Mbit/s H.264 + DTS remuxes. For 50/60 fps judder, uncomment `core_freq_min=500` in `/boot/firmware/config.txt`.
+- **Power:** use the official 5.1 V / 2.5 A supply. On a weak supply the firmware throttles the CPU to 600 MHz (`vcgencmd get_throttled` ≠ `0x0`; `/api/status` shows it too), and the Plex UI, playback start and the phone app all slow down.
+- **IPv6:** the home router advertises IPv6 but routes nothing out. `/etc/gai.conf` (base role) makes the Pi try IPv4 first; otherwise PM4K hangs ~6 s on dual-stack Plex hosts.
 - 1 GB RAM: Kodi's cache is capped at ~120 MB and artwork resolution is reduced (`advancedsettings.xml`).
 
 ## Verify on the device (first boot checklist)

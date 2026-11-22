@@ -980,7 +980,29 @@ class PlexOnTV:
             log.warning("Plex: could not open %s: %s", key, exc)
 
     @staticmethod
-    def _notify_open(key: str, play: bool, from_start: bool) -> None:
+    def _wake_gui() -> None:
+        """Close the screensaver (the dashboard) before PM4K opens an item.
+
+        The screensaver is a modal: while it is up Kodi refuses PM4K's player
+        window ("active modal dialogs") and the item never plays. Any
+        JSON-RPC input wakes the screensaver and is swallowed by it.
+        """
+        flags = ["System.ScreenSaverActive", "System.HasActiveModalDialog"]
+        state = kodi_rpc("XBMC.GetInfoBooleans", {"booleans": flags}, timeout=2) or {}
+        if not state.get("System.ScreenSaverActive"):
+            return
+        kodi_rpc("Input.ExecuteAction", {"action": "noop"}, timeout=2)
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            time.sleep(0.2)
+            state = kodi_rpc("XBMC.GetInfoBooleans", {"booleans": flags}, timeout=2) or {}
+            if not any(state.get(flag) for flag in flags):
+                return
+        log.warning("Plex: the screensaver did not close; opening anyway")
+
+    @classmethod
+    def _notify_open(cls, key: str, play: bool, from_start: bool) -> None:
+        cls._wake_gui()
         kodi_rpc("JSONRPC.NotifyAll", {
             "sender": "couchos", "message": "open",
             "data": {"key": key, "play": bool(play), "from_start": bool(from_start)},

@@ -53,6 +53,18 @@
     autoclean: true
     clean: true
 
+# The router hands out a global IPv6 address but routes nothing out over v6:
+# connects to dual-stack hosts (discover.provider.plex.tv) hang ~6 s per
+# attempt. PM4K's connector does not fall back to IPv4 in time, which stalled
+# its home screen. Resolve IPv4 first; IPv6 still works on the LAN (mDNS).
+- name: Prefer IPv4 for outgoing connections
+  ansible.builtin.copy:
+    dest: /etc/gai.conf
+    content: |
+      # CouchOS (Ansible): IPv4 first, see roles/base.
+      precedence ::ffff:0:0/96  100
+    mode: "0644"
+
 - name: Kernel and network tunables
   ansible.posix.sysctl:
     name: "{{ item.name }}"

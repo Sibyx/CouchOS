@@ -81,6 +81,12 @@ pm4k_enforced:
   # an appliance there is nothing to exit to, and the modal used to sit on top
   # of the AirPlay video.
   disable_exit_on_back: true
+  # "Allowed codecs" (direct play) empty: PM4K's default allows HEVC and VC-1,
+  # which the Pi 3 can only decode in software (House 1080p HEVC: Kodi at
+  # 350 % CPU, dropping frames). The server converts them to H.264, which the
+  # Pi decodes in hardware. Also stops PM4K asking for HEVC as a transcode
+  # target. A JSON string, written as is (PM4K's own settings screen does too).
+  allowed_codecs: "[]"
 
 # PM4K (PlexMod for Kodi). The upstream tags are stale; this is the
 # develop_kodi21 head on 2026-11-07 (addon version 1.14.1-beta1).

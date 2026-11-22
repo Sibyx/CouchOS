@@ -8,7 +8,6 @@ struct DashboardView: View {
     @State private var board: Board?
     @State private var duck: DuckPreview?
     @State private var draft = ""
-    @AppStorage("dashboardFrom") private var from = ""
     @State private var newItem = ""
     @State private var busy = false
     @FocusState private var addFocused: Bool
@@ -40,8 +39,6 @@ struct DashboardView: View {
                     .onChange(of: draft) { _, text in
                         if text.count > Board.messageLimit { draft = String(text.prefix(Board.messageLimit)) }
                     }
-                TextField("From (optional)", text: $from)
-                    .textInputAutocapitalization(.words)
                 HStack {
                     Button("Send to TV") { sendMessage(draft) }
                         .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || busy)
@@ -55,9 +52,9 @@ struct DashboardView: View {
                 Text("Message")
             } footer: {
                 if let message = board?.message {
-                    Text("On the TV now: “\(message.text)”\(message.from.map { " — \($0)" } ?? "")")
+                    Text("On the TV now, across the top of the dashboard: “\(message.text)”")
                 } else {
-                    Text("\(draft.count)/\(Board.messageLimit). Emoji show in the app only; the TV's font has none.")
+                    Text("\(draft.count)/\(Board.messageLimit). Shown across the top of the TV's dashboard until you take it down. Emoji show in the app only; the TV's font has none.")
                 }
             }
 
@@ -122,10 +119,7 @@ struct DashboardView: View {
     }
 
     private func sendMessage(_ text: String) {
-        var op: [String: Any] = ["op": "message", "text": text]
-        let sender = from.trimmingCharacters(in: .whitespaces)
-        if !sender.isEmpty { op["from"] = sender }
-        run(op) { draft = "" }
+        run(["op": "message", "text": text]) { draft = "" }
     }
 
     private func run(_ op: [String: Any], then done: @escaping () -> Void = {}) {

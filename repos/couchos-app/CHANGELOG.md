@@ -27,6 +27,11 @@ All notable changes to the CouchOS iOS app.
 - About section with version and build, and how to send beta feedback. (build 1)
 - Privacy manifest and export-compliance declaration, needed for TestFlight. (build 1)
 - Dashboard screen (Settings → Dashboard): send a message to the TV, keep a shared to-do list on it, and see the weather duck the TV is showing. (build 2)
+- Open on TV → CouchOS search: opens the TV's own catalog, for searching with the TV remote. (build 3)
+
+### Changed
+- Open on TV → CouchOS search opens at once: the TV keeps the catalog ready instead of starting it. (build 4)
+- Dashboard messages no longer have a "From" field; the TV shows the message as a banner across the top of its dashboard. (build 4)
 
 ### Changed
 - Bundle identifier is `dev.dubec.couchos`. (build 1)

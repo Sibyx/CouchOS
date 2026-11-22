@@ -6,17 +6,21 @@
      y  36 time, date        the duck         the frog of the day
        262 today's weather   (512 x 512)      (photo 600 x 300,
            next hours        its line         names, summary)
-       712 TO DO             MESSAGE          now playing, else the
-      1016                                    carousel: next days, the app
+       712 the bottom row: three cards of 570, flexible (see there)
+      1016
       1032 "data is not updating" (only when stale)
 
      Margins: 72 left and right, 32 between columns; the burn-in drift
      (dashboard.py SHIFTS, up to 8 x 10 px) stays inside the screen.
-     The four always-there parts (weather, duck, frog, TODO + message) never
-     move; only the bottom-right card changes. When something plays audio
-     only (AirPlay from Spotify, Plex music), it shows what is playing; else
-     it rotates its slides every 20 s (Window.Property(slide), set by
-     dashboard.py; a slide without data is skipped).
+     A message from the app is a yellow banner over the centre and right
+     columns (36 to 216), only while there is one: the duck shrinks under it
+     and the frog's words take its photo's place. The bottom row shows only
+     cards with something in them: TO DO when it has items, what is
+     playing when something plays audio only (AirPlay from
+     Spotify, Plex music), and next days and the app. What doesn't fit
+     shares the last slot as a carousel, a slide every 20 s
+     (Window.Property(slide), set by dashboard.py; a slide without data is
+     skipped). With nothing on the board, next days goes wide (five days).
 
      Fonts are Estuary's (Kodi's default skin), used at their native size:
      scaling a font with a zoom animation scales its glyph texture, which
@@ -130,17 +134,52 @@
                 </control>
             </control>
 
+            <!-- ================= the message: a banner on top =================
+                 Only while there is one. It takes the top of the centre and
+                 right columns (the clock stays where it is): the duck shrinks
+                 to 360 under it and the frog drops its photo. Up to 110
+                 characters in big type (two lines), longer ones (to 280)
+                 smaller (four lines): board.message_long, from dashd. -->
+            <control type="group">
+                <left>704</left><top>36</top>
+                <visible>!String.IsEmpty(Window.Property(board.message))</visible>
+                <animation effect="fade" time="400">Visible</animation>
+                <control type="image"><left>0</left><top>0</top><width>1144</width><height>180</height><texture border="24" colordiffuse="FFFFD23F">card.png</texture></control>
+                <control type="textbox">
+                    <left>36</left><top>30</top><width>1072</width><height>120</height>
+                    <aligny>center</aligny><font>font37</font><textcolor>FF1D1D1D</textcolor>
+                    <label>[B]$INFO[Window.Property(board.message)][/B]</label>
+                    <visible>String.IsEmpty(Window.Property(board.message_long))</visible>
+                </control>
+                <control type="textbox">
+                    <left>36</left><top>18</top><width>1072</width><height>144</height>
+                    <aligny>center</aligny><font>font27</font><textcolor>FF1D1D1D</textcolor>
+                    <label>[B]$INFO[Window.Property(board.message)][/B]</label>
+                    <visible>!String.IsEmpty(Window.Property(board.message_long))</visible>
+                </control>
+            </control>
+
             <!-- ================= centre: the duck ================= -->
             <control type="image">
                 <left>704</left><top>40</top><width>512</width><height>512</height>
                 <fadetime>400</fadetime>
                 <texture background="true">$INFO[Window.Property(weather.duck)]</texture>
-                <visible>!String.IsEmpty(Window.Property(weather.duck))</visible>
+                <visible>!String.IsEmpty(Window.Property(weather.duck)) + String.IsEmpty(Window.Property(board.message))</visible>
             </control>
-            <!-- its line, in a yellow speech bubble pointing up at it -->
+            <!-- under the message: 360, the same picture scaled -->
+            <control type="image">
+                <left>780</left><top>232</top><width>360</width><height>360</height>
+                <aspectratio>keep</aspectratio>
+                <fadetime>400</fadetime>
+                <texture background="true">$INFO[Window.Property(weather.duck)]</texture>
+                <visible>!String.IsEmpty(Window.Property(weather.duck)) + !String.IsEmpty(Window.Property(board.message))</visible>
+            </control>
+            <!-- its line, in a yellow speech bubble pointing up at it (a bit
+                 lower under the message: the small duck ends at 592) -->
             <control type="group">
                 <left>704</left><top>580</top>
                 <visible>!String.IsEmpty(Window.Property(weather.tip))</visible>
+                <animation effect="slide" end="0,24" time="0" condition="!String.IsEmpty(Window.Property(board.message))">Conditional</animation>
                 <control type="image">
                     <left>240</left><top>-12</top><width>32</width><height>32</height>
                     <texture colordiffuse="FFFFD23F">white.png</texture>
@@ -166,7 +205,12 @@
                     <aspectratio>scale</aspectratio>
                     <fadetime>400</fadetime>
                     <texture background="true">$INFO[Window.Property(frog.photo)]</texture>
+                    <visible>String.IsEmpty(Window.Property(board.message))</visible>
                 </control>
+                <!-- the words; under the message banner (to 216) they move up
+                     into the photo's place, from 232 -->
+                <control type="group">
+                <animation effect="slide" end="0,-124" time="0" condition="!String.IsEmpty(Window.Property(board.message))">Conditional</animation>
                 <control type="label">
                     <left>0</left><top>316</top><width>600</width><height>28</height>
                     <font>font12</font><textcolor>FFFFD23F</textcolor>
@@ -188,125 +232,107 @@
                     <font>font12</font><textcolor>FF8A8A8A</textcolor>
                     <label>$INFO[Window.Property(frog.family)]$INFO[Window.Property(frog.status),  ·  ]</label>
                 </control>
-                <!-- 4 lines: the TV summary is up to ~170 characters -->
+                <!-- 5 lines: the TV summary is up to ~260 characters
+                     (dashd TV_SUMMARY_CHARS); ends at 674, before the row -->
                 <control type="textbox">
-                    <left>0</left><top>466</top><width>600</width><height>128</height>
+                    <left>0</left><top>466</top><width>600</width><height>168</height>
                     <font>font12</font><textcolor>FFB8B8B8</textcolor>
                     <label>$INFO[Window.Property(frog.summary)]</label>
                 </control>
                 <control type="label">
-                    <left>0</left><top>602</top><width>600</width><height>26</height>
+                    <left>0</left><top>642</top><width>600</width><height>26</height>
                     <font>font10</font><textcolor>FF5A5A5A</textcolor>
                     <label>$INFO[Window.Property(frog.attribution)]</label>
                 </control>
+                </control>
             </control>
 
-            <!-- ================= bottom row: 712 to 1016 ================= -->
+            <!-- ================= bottom row: 712 to 1016 =================
+                 Only the cards with something to show, left to right in a
+                 grouplist (a hidden card takes no room). Three slots, all
+                 570 wide with 33 between (1776): any card can land in any
+                 slot. Window.Property(board.cards) (dashboard.py) says how
+                 many of them the TO DO list takes (the message is the
+                 banner on top, not a card):
+                   1  TO DO, then now playing + the carousel, else next
+                      days + the app, both at once
+                   0  now playing + next days + the app, else next days
+                      wide (five days) + the app -->
+            <control type="grouplist">
+                <left>72</left><top>712</top><width>1776</width><height>304</height>
+                <orientation>horizontal</orientation>
+                <itemgap>33</itemgap>
+                <scrolltime>0</scrolltime>
 
-            <!-- the TODO list: open items, then done ones (dimmed) for a while.
-                 Always there; empty, it says so. -->
+            <!-- the TODO list: open items, then done ones (dimmed) for a while -->
             <control type="group">
-                <left>72</left><top>712</top>
-                <control type="image"><left>0</left><top>0</top><width>600</width><height>304</height><texture border="24" colordiffuse="14FFFFFF">card.png</texture></control>
+                <width>570</width><height>304</height>
+                <visible>!String.IsEmpty(Window.Property(board.items))</visible>
+                <animation effect="fade" time="400">Visible</animation>
+                <control type="image"><left>0</left><top>0</top><width>570</width><height>304</height><texture border="24" colordiffuse="14FFFFFF">card.png</texture></control>
                 <control type="label">
                     <left>32</left><top>22</top><width>260</width><height>28</height>
                     <font>font12</font><textcolor>FFFFD23F</textcolor>
                     <label>TO DO</label>
                 </control>
                 <control type="label">
-                    <left>292</left><top>22</top><width>276</width><height>28</height>
+                    <left>262</left><top>22</top><width>276</width><height>28</height>
                     <align>right</align><font>font12</font><textcolor>FF8A8A8A</textcolor>
                     <label>$INFO[Window.Property(board.count)]$INFO[Window.Property(board.more),  ·  ]</label>
-                </control>
-                <control type="label">
-                    <left>32</left><top>62</top><width>536</width><height>34</height>
-                    <aligny>center</aligny><font>font27</font><textcolor>FF5A5A5A</textcolor>
-                    <label>Nothing to do. Add things in the app.</label>
-                    <visible>String.IsEmpty(Window.Property(board.items))</visible>
                 </control>
                 <!-- rows: 6 x 34; a yellow dot for open, a green one for done -->
                 <control type="group"><left>32</left><top>62</top>
                     <visible>!String.IsEmpty(Window.Property(board.item1.text))</visible>
                     <control type="image"><left>0</left><top>10</top><width>14</width><height>14</height><texture colordiffuse="FFFFD23F">dot.png</texture><visible>String.IsEmpty(Window.Property(board.item1.done))</visible></control>
                     <control type="image"><left>0</left><top>10</top><width>14</width><height>14</height><texture colordiffuse="FF8FBF7A">dot.png</texture><visible>!String.IsEmpty(Window.Property(board.item1.done))</visible></control>
-                    <control type="label"><left>30</left><top>0</top><width>506</width><height>34</height><aligny>center</aligny><font>font27</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(board.item1.text)]</label><visible>String.IsEmpty(Window.Property(board.item1.done))</visible></control>
-                    <control type="label"><left>30</left><top>0</top><width>506</width><height>34</height><aligny>center</aligny><font>font27</font><textcolor>FF6A6A6A</textcolor><label>$INFO[Window.Property(board.item1.text)]</label><visible>!String.IsEmpty(Window.Property(board.item1.done))</visible></control>
+                    <control type="label"><left>30</left><top>0</top><width>476</width><height>34</height><aligny>center</aligny><font>font27</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(board.item1.text)]</label><visible>String.IsEmpty(Window.Property(board.item1.done))</visible></control>
+                    <control type="label"><left>30</left><top>0</top><width>476</width><height>34</height><aligny>center</aligny><font>font27</font><textcolor>FF6A6A6A</textcolor><label>$INFO[Window.Property(board.item1.text)]</label><visible>!String.IsEmpty(Window.Property(board.item1.done))</visible></control>
                 </control>
                 <control type="group"><left>32</left><top>96</top>
                     <visible>!String.IsEmpty(Window.Property(board.item2.text))</visible>
                     <control type="image"><left>0</left><top>10</top><width>14</width><height>14</height><texture colordiffuse="FFFFD23F">dot.png</texture><visible>String.IsEmpty(Window.Property(board.item2.done))</visible></control>
                     <control type="image"><left>0</left><top>10</top><width>14</width><height>14</height><texture colordiffuse="FF8FBF7A">dot.png</texture><visible>!String.IsEmpty(Window.Property(board.item2.done))</visible></control>
-                    <control type="label"><left>30</left><top>0</top><width>506</width><height>34</height><aligny>center</aligny><font>font27</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(board.item2.text)]</label><visible>String.IsEmpty(Window.Property(board.item2.done))</visible></control>
-                    <control type="label"><left>30</left><top>0</top><width>506</width><height>34</height><aligny>center</aligny><font>font27</font><textcolor>FF6A6A6A</textcolor><label>$INFO[Window.Property(board.item2.text)]</label><visible>!String.IsEmpty(Window.Property(board.item2.done))</visible></control>
+                    <control type="label"><left>30</left><top>0</top><width>476</width><height>34</height><aligny>center</aligny><font>font27</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(board.item2.text)]</label><visible>String.IsEmpty(Window.Property(board.item2.done))</visible></control>
+                    <control type="label"><left>30</left><top>0</top><width>476</width><height>34</height><aligny>center</aligny><font>font27</font><textcolor>FF6A6A6A</textcolor><label>$INFO[Window.Property(board.item2.text)]</label><visible>!String.IsEmpty(Window.Property(board.item2.done))</visible></control>
                 </control>
                 <control type="group"><left>32</left><top>130</top>
                     <visible>!String.IsEmpty(Window.Property(board.item3.text))</visible>
                     <control type="image"><left>0</left><top>10</top><width>14</width><height>14</height><texture colordiffuse="FFFFD23F">dot.png</texture><visible>String.IsEmpty(Window.Property(board.item3.done))</visible></control>
                     <control type="image"><left>0</left><top>10</top><width>14</width><height>14</height><texture colordiffuse="FF8FBF7A">dot.png</texture><visible>!String.IsEmpty(Window.Property(board.item3.done))</visible></control>
-                    <control type="label"><left>30</left><top>0</top><width>506</width><height>34</height><aligny>center</aligny><font>font27</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(board.item3.text)]</label><visible>String.IsEmpty(Window.Property(board.item3.done))</visible></control>
-                    <control type="label"><left>30</left><top>0</top><width>506</width><height>34</height><aligny>center</aligny><font>font27</font><textcolor>FF6A6A6A</textcolor><label>$INFO[Window.Property(board.item3.text)]</label><visible>!String.IsEmpty(Window.Property(board.item3.done))</visible></control>
+                    <control type="label"><left>30</left><top>0</top><width>476</width><height>34</height><aligny>center</aligny><font>font27</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(board.item3.text)]</label><visible>String.IsEmpty(Window.Property(board.item3.done))</visible></control>
+                    <control type="label"><left>30</left><top>0</top><width>476</width><height>34</height><aligny>center</aligny><font>font27</font><textcolor>FF6A6A6A</textcolor><label>$INFO[Window.Property(board.item3.text)]</label><visible>!String.IsEmpty(Window.Property(board.item3.done))</visible></control>
                 </control>
                 <control type="group"><left>32</left><top>164</top>
                     <visible>!String.IsEmpty(Window.Property(board.item4.text))</visible>
                     <control type="image"><left>0</left><top>10</top><width>14</width><height>14</height><texture colordiffuse="FFFFD23F">dot.png</texture><visible>String.IsEmpty(Window.Property(board.item4.done))</visible></control>
                     <control type="image"><left>0</left><top>10</top><width>14</width><height>14</height><texture colordiffuse="FF8FBF7A">dot.png</texture><visible>!String.IsEmpty(Window.Property(board.item4.done))</visible></control>
-                    <control type="label"><left>30</left><top>0</top><width>506</width><height>34</height><aligny>center</aligny><font>font27</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(board.item4.text)]</label><visible>String.IsEmpty(Window.Property(board.item4.done))</visible></control>
-                    <control type="label"><left>30</left><top>0</top><width>506</width><height>34</height><aligny>center</aligny><font>font27</font><textcolor>FF6A6A6A</textcolor><label>$INFO[Window.Property(board.item4.text)]</label><visible>!String.IsEmpty(Window.Property(board.item4.done))</visible></control>
+                    <control type="label"><left>30</left><top>0</top><width>476</width><height>34</height><aligny>center</aligny><font>font27</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(board.item4.text)]</label><visible>String.IsEmpty(Window.Property(board.item4.done))</visible></control>
+                    <control type="label"><left>30</left><top>0</top><width>476</width><height>34</height><aligny>center</aligny><font>font27</font><textcolor>FF6A6A6A</textcolor><label>$INFO[Window.Property(board.item4.text)]</label><visible>!String.IsEmpty(Window.Property(board.item4.done))</visible></control>
                 </control>
                 <control type="group"><left>32</left><top>198</top>
                     <visible>!String.IsEmpty(Window.Property(board.item5.text))</visible>
                     <control type="image"><left>0</left><top>10</top><width>14</width><height>14</height><texture colordiffuse="FFFFD23F">dot.png</texture><visible>String.IsEmpty(Window.Property(board.item5.done))</visible></control>
                     <control type="image"><left>0</left><top>10</top><width>14</width><height>14</height><texture colordiffuse="FF8FBF7A">dot.png</texture><visible>!String.IsEmpty(Window.Property(board.item5.done))</visible></control>
-                    <control type="label"><left>30</left><top>0</top><width>506</width><height>34</height><aligny>center</aligny><font>font27</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(board.item5.text)]</label><visible>String.IsEmpty(Window.Property(board.item5.done))</visible></control>
-                    <control type="label"><left>30</left><top>0</top><width>506</width><height>34</height><aligny>center</aligny><font>font27</font><textcolor>FF6A6A6A</textcolor><label>$INFO[Window.Property(board.item5.text)]</label><visible>!String.IsEmpty(Window.Property(board.item5.done))</visible></control>
+                    <control type="label"><left>30</left><top>0</top><width>476</width><height>34</height><aligny>center</aligny><font>font27</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(board.item5.text)]</label><visible>String.IsEmpty(Window.Property(board.item5.done))</visible></control>
+                    <control type="label"><left>30</left><top>0</top><width>476</width><height>34</height><aligny>center</aligny><font>font27</font><textcolor>FF6A6A6A</textcolor><label>$INFO[Window.Property(board.item5.text)]</label><visible>!String.IsEmpty(Window.Property(board.item5.done))</visible></control>
                 </control>
                 <control type="group"><left>32</left><top>232</top>
                     <visible>!String.IsEmpty(Window.Property(board.item6.text))</visible>
                     <control type="image"><left>0</left><top>10</top><width>14</width><height>14</height><texture colordiffuse="FFFFD23F">dot.png</texture><visible>String.IsEmpty(Window.Property(board.item6.done))</visible></control>
                     <control type="image"><left>0</left><top>10</top><width>14</width><height>14</height><texture colordiffuse="FF8FBF7A">dot.png</texture><visible>!String.IsEmpty(Window.Property(board.item6.done))</visible></control>
-                    <control type="label"><left>30</left><top>0</top><width>506</width><height>34</height><aligny>center</aligny><font>font27</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(board.item6.text)]</label><visible>String.IsEmpty(Window.Property(board.item6.done))</visible></control>
-                    <control type="label"><left>30</left><top>0</top><width>506</width><height>34</height><aligny>center</aligny><font>font27</font><textcolor>FF6A6A6A</textcolor><label>$INFO[Window.Property(board.item6.text)]</label><visible>!String.IsEmpty(Window.Property(board.item6.done))</visible></control>
+                    <control type="label"><left>30</left><top>0</top><width>476</width><height>34</height><aligny>center</aligny><font>font27</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(board.item6.text)]</label><visible>String.IsEmpty(Window.Property(board.item6.done))</visible></control>
+                    <control type="label"><left>30</left><top>0</top><width>476</width><height>34</height><aligny>center</aligny><font>font27</font><textcolor>FF6A6A6A</textcolor><label>$INFO[Window.Property(board.item6.text)]</label><visible>!String.IsEmpty(Window.Property(board.item6.done))</visible></control>
                 </control>
             </control>
 
-            <!-- the message from the app. Always there; empty, it says so. -->
-            <control type="group">
-                <left>704</left><top>712</top>
-                <control type="image"><left>0</left><top>0</top><width>512</width><height>304</height><texture border="24" colordiffuse="14FFFFFF">card.png</texture></control>
-                <control type="label">
-                    <left>32</left><top>22</top><width>448</width><height>28</height>
-                    <font>font12</font><textcolor>FFFFD23F</textcolor>
-                    <label>MESSAGE</label>
-                </control>
-                <control type="textbox">
-                    <left>32</left><top>60</top><width>448</width><height>186</height>
-                    <font>font27</font><textcolor>FFF2F2F2</textcolor>
-                    <label>$INFO[Window.Property(board.message)]</label>
-                    <visible>!String.IsEmpty(Window.Property(board.message))</visible>
-                </control>
-                <control type="label">
-                    <left>32</left><top>62</top><width>448</width><height>34</height>
-                    <aligny>center</aligny><font>font27</font><textcolor>FF5A5A5A</textcolor>
-                    <label>No message yet.</label>
-                    <visible>String.IsEmpty(Window.Property(board.message))</visible>
-                </control>
-                <control type="label">
-                    <left>32</left><top>250</top><width>448</width><height>34</height>
-                    <align>right</align><font>font27</font><textcolor>FFB8B8B8</textcolor>
-                    <label>[I]$INFO[Window.Property(board.from)][/I]</label>
-                </control>
-            </control>
-
-            <!-- bottom right: what is playing (audio only), else the slides -->
-            <control type="group">
-                <left>1248</left><top>712</top>
-                <control type="image"><left>0</left><top>0</top><width>600</width><height>304</height><texture border="24" colordiffuse="14FFFFFF">card.png</texture></control>
-
-                <!-- now playing. AirPlay's details are in Window(Home), Plex
-                     music's in MusicPlayer; Player.* covers both. -->
+                <!-- now playing (audio only). AirPlay's details are in
+                     Window(Home), Plex music's in MusicPlayer; Player.*
+                     covers both. -->
                 <control type="group">
+                    <width>570</width><height>304</height>
                     <visible>Player.HasAudio + !Player.HasVideo</visible>
-                    <animation effect="fade" time="400">VisibleChange</animation>
+                    <animation effect="fade" time="400">Visible</animation>
+                    <control type="image"><left>0</left><top>0</top><width>570</width><height>304</height><texture border="24" colordiffuse="14FFFFFF">card.png</texture></control>
                     <!-- 256 px: within the texture limit, drawn as sent -->
                     <control type="image">
                         <left>24</left><top>24</top><width>256</width><height>256</height>
@@ -315,37 +341,37 @@
                         <texture background="true" fallback="DefaultAlbumCover.png">$INFO[Player.Art(thumb)]</texture>
                     </control>
                     <control type="label">
-                        <left>304</left><top>24</top><width>272</width><height>28</height>
+                        <left>304</left><top>24</top><width>242</width><height>28</height>
                         <font>font12</font><textcolor>FFFFD23F</textcolor>
                         <label>NOW PLAYING</label>
                         <visible>!Player.Paused</visible>
                     </control>
                     <control type="label">
-                        <left>304</left><top>24</top><width>272</width><height>28</height>
+                        <left>304</left><top>24</top><width>242</width><height>28</height>
                         <font>font12</font><textcolor>FF8A8A8A</textcolor>
                         <label>PAUSED</label>
                         <visible>Player.Paused</visible>
                     </control>
                     <!-- title: two lines, then cut -->
                     <control type="textbox">
-                        <left>304</left><top>58</top><width>272</width><height>76</height>
+                        <left>304</left><top>58</top><width>242</width><height>76</height>
                         <font>font27</font><textcolor>FFF2F2F2</textcolor>
                         <label>[B]$INFO[Window(Home).Property(AirPlay.Title)][/B]</label>
                         <visible>String.StartsWith(Player.Filenameandpath,airplay://)</visible>
                     </control>
                     <control type="textbox">
-                        <left>304</left><top>58</top><width>272</width><height>76</height>
+                        <left>304</left><top>58</top><width>242</width><height>76</height>
                         <font>font27</font><textcolor>FFF2F2F2</textcolor>
                         <label>[B]$INFO[Player.Title][/B]</label>
                         <visible>!String.StartsWith(Player.Filenameandpath,airplay://)</visible>
                     </control>
                     <control type="label">
-                        <left>304</left><top>140</top><width>272</width><height>38</height>
+                        <left>304</left><top>140</top><width>242</width><height>38</height>
                         <font>font27</font><textcolor>FFB8B8B8</textcolor>
                         <label>$INFO[MusicPlayer.Artist]$INFO[Window(Home).Property(AirPlay.Artist)]</label>
                     </control>
                     <control type="label">
-                        <left>304</left><top>180</top><width>272</width><height>30</height>
+                        <left>304</left><top>180</top><width>242</width><height>30</height>
                         <font>font12</font><textcolor>FF8A8A8A</textcolor>
                         <label>$INFO[MusicPlayer.Album]$INFO[Window(Home).Property(AirPlay.Album)]</label>
                     </control>
@@ -353,76 +379,132 @@
                     <control type="group">
                         <visible>Player.HasDuration</visible>
                         <control type="progress">
-                            <left>304</left><top>232</top><width>272</width><height>6</height>
+                            <left>304</left><top>232</top><width>242</width><height>6</height>
                             <info>Player.Progress</info>
                             <texturebg colordiffuse="33FFFFFF">white.png</texturebg>
                             <midtexture colordiffuse="FFFFD23F">white.png</midtexture>
                         </control>
                         <control type="label">
-                            <left>304</left><top>246</top><width>272</width><height>30</height>
+                            <left>304</left><top>246</top><width>242</width><height>30</height>
                             <font>font12</font><textcolor>FF8A8A8A</textcolor>
                             <label>$INFO[Player.Time(mm:ss)]$INFO[Player.Duration(mm:ss), / ]</label>
                         </control>
                     </control>
                 </control>
 
-                <!-- slide "days": the next four days -->
+                <!-- next days, four of them: a card of its own when there's
+                     room, else a carousel slide -->
                 <control type="group">
-                    <visible>String.IsEqual(Window.Property(slide),days) + !Player.HasAudio</visible>
-                    <animation effect="fade" time="400">VisibleChange</animation>
+                    <width>570</width><height>304</height>
+                    <visible>!String.IsEmpty(Window.Property(weather.days)) + [[String.IsEqual(Window.Property(board.cards),1) + [!Player.HasAudio | String.IsEqual(Window.Property(slide),days)]] | [String.IsEqual(Window.Property(board.cards),0) + Player.HasAudio]]</visible>
+                    <animation effect="fade" time="400">Visible</animation>
+                    <control type="image"><left>0</left><top>0</top><width>570</width><height>304</height><texture border="24" colordiffuse="14FFFFFF">card.png</texture></control>
                     <control type="label">
-                        <left>32</left><top>22</top><width>536</width><height>28</height>
+                        <left>32</left><top>22</top><width>506</width><height>28</height>
                         <font>font12</font><textcolor>FFFFD23F</textcolor>
                         <label>NEXT DAYS</label>
                     </control>
-                    <!-- 4 x 134 from 32. Written out, like the hours. -->
+                    <!-- 4 x 126 from 32. Written out, like the hours. -->
                     <control type="group"><left>32</left><top>58</top>
-                        <control type="label"><left>0</left><top>0</top><width>134</width><height>34</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.day1.name)]</label></control>
-                        <control type="image"><left>31</left><top>38</top><width>72</width><height>72</height><aspectratio>keep</aspectratio><texture>$INFO[Window.Property(weather.day1.icon),resource://resource.images.weathericons.default/,.png]</texture></control>
-                        <control type="label"><left>0</left><top>114</top><width>134</width><height>46</height><align>center</align><font>font37</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(weather.day1.high)]</label></control>
-                        <control type="label"><left>0</left><top>160</top><width>134</width><height>36</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.day1.low)]</label></control>
-                        <control type="label"><left>0</left><top>198</top><width>134</width><height>30</height><align>center</align><font>font12</font><textcolor>FF7FB2E5</textcolor><label>$INFO[Window.Property(weather.day1.rain)]</label></control>
+                        <control type="label"><left>0</left><top>0</top><width>126</width><height>34</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.day1.name)]</label></control>
+                        <control type="image"><left>27</left><top>38</top><width>72</width><height>72</height><aspectratio>keep</aspectratio><texture>$INFO[Window.Property(weather.day1.icon),resource://resource.images.weathericons.default/,.png]</texture></control>
+                        <control type="label"><left>0</left><top>114</top><width>126</width><height>46</height><align>center</align><font>font37</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(weather.day1.high)]</label></control>
+                        <control type="label"><left>0</left><top>160</top><width>126</width><height>36</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.day1.low)]</label></control>
+                        <control type="label"><left>0</left><top>198</top><width>126</width><height>30</height><align>center</align><font>font12</font><textcolor>FF7FB2E5</textcolor><label>$INFO[Window.Property(weather.day1.rain)]</label></control>
                     </control>
-                    <control type="group"><left>166</left><top>58</top>
-                        <control type="label"><left>0</left><top>0</top><width>134</width><height>34</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.day2.name)]</label></control>
-                        <control type="image"><left>31</left><top>38</top><width>72</width><height>72</height><aspectratio>keep</aspectratio><texture>$INFO[Window.Property(weather.day2.icon),resource://resource.images.weathericons.default/,.png]</texture></control>
-                        <control type="label"><left>0</left><top>114</top><width>134</width><height>46</height><align>center</align><font>font37</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(weather.day2.high)]</label></control>
-                        <control type="label"><left>0</left><top>160</top><width>134</width><height>36</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.day2.low)]</label></control>
-                        <control type="label"><left>0</left><top>198</top><width>134</width><height>30</height><align>center</align><font>font12</font><textcolor>FF7FB2E5</textcolor><label>$INFO[Window.Property(weather.day2.rain)]</label></control>
+                    <control type="group"><left>158</left><top>58</top>
+                        <control type="label"><left>0</left><top>0</top><width>126</width><height>34</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.day2.name)]</label></control>
+                        <control type="image"><left>27</left><top>38</top><width>72</width><height>72</height><aspectratio>keep</aspectratio><texture>$INFO[Window.Property(weather.day2.icon),resource://resource.images.weathericons.default/,.png]</texture></control>
+                        <control type="label"><left>0</left><top>114</top><width>126</width><height>46</height><align>center</align><font>font37</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(weather.day2.high)]</label></control>
+                        <control type="label"><left>0</left><top>160</top><width>126</width><height>36</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.day2.low)]</label></control>
+                        <control type="label"><left>0</left><top>198</top><width>126</width><height>30</height><align>center</align><font>font12</font><textcolor>FF7FB2E5</textcolor><label>$INFO[Window.Property(weather.day2.rain)]</label></control>
                     </control>
-                    <control type="group"><left>300</left><top>58</top>
-                        <control type="label"><left>0</left><top>0</top><width>134</width><height>34</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.day3.name)]</label></control>
-                        <control type="image"><left>31</left><top>38</top><width>72</width><height>72</height><aspectratio>keep</aspectratio><texture>$INFO[Window.Property(weather.day3.icon),resource://resource.images.weathericons.default/,.png]</texture></control>
-                        <control type="label"><left>0</left><top>114</top><width>134</width><height>46</height><align>center</align><font>font37</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(weather.day3.high)]</label></control>
-                        <control type="label"><left>0</left><top>160</top><width>134</width><height>36</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.day3.low)]</label></control>
-                        <control type="label"><left>0</left><top>198</top><width>134</width><height>30</height><align>center</align><font>font12</font><textcolor>FF7FB2E5</textcolor><label>$INFO[Window.Property(weather.day3.rain)]</label></control>
+                    <control type="group"><left>284</left><top>58</top>
+                        <control type="label"><left>0</left><top>0</top><width>126</width><height>34</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.day3.name)]</label></control>
+                        <control type="image"><left>27</left><top>38</top><width>72</width><height>72</height><aspectratio>keep</aspectratio><texture>$INFO[Window.Property(weather.day3.icon),resource://resource.images.weathericons.default/,.png]</texture></control>
+                        <control type="label"><left>0</left><top>114</top><width>126</width><height>46</height><align>center</align><font>font37</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(weather.day3.high)]</label></control>
+                        <control type="label"><left>0</left><top>160</top><width>126</width><height>36</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.day3.low)]</label></control>
+                        <control type="label"><left>0</left><top>198</top><width>126</width><height>30</height><align>center</align><font>font12</font><textcolor>FF7FB2E5</textcolor><label>$INFO[Window.Property(weather.day3.rain)]</label></control>
                     </control>
-                    <control type="group"><left>434</left><top>58</top>
-                        <control type="label"><left>0</left><top>0</top><width>134</width><height>34</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.day4.name)]</label></control>
-                        <control type="image"><left>31</left><top>38</top><width>72</width><height>72</height><aspectratio>keep</aspectratio><texture>$INFO[Window.Property(weather.day4.icon),resource://resource.images.weathericons.default/,.png]</texture></control>
-                        <control type="label"><left>0</left><top>114</top><width>134</width><height>46</height><align>center</align><font>font37</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(weather.day4.high)]</label></control>
-                        <control type="label"><left>0</left><top>160</top><width>134</width><height>36</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.day4.low)]</label></control>
-                        <control type="label"><left>0</left><top>198</top><width>134</width><height>30</height><align>center</align><font>font12</font><textcolor>FF7FB2E5</textcolor><label>$INFO[Window.Property(weather.day4.rain)]</label></control>
+                    <control type="group"><left>410</left><top>58</top>
+                        <control type="label"><left>0</left><top>0</top><width>126</width><height>34</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.day4.name)]</label></control>
+                        <control type="image"><left>27</left><top>38</top><width>72</width><height>72</height><aspectratio>keep</aspectratio><texture>$INFO[Window.Property(weather.day4.icon),resource://resource.images.weathericons.default/,.png]</texture></control>
+                        <control type="label"><left>0</left><top>114</top><width>126</width><height>46</height><align>center</align><font>font37</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(weather.day4.high)]</label></control>
+                        <control type="label"><left>0</left><top>160</top><width>126</width><height>36</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.day4.low)]</label></control>
+                        <control type="label"><left>0</left><top>198</top><width>126</width><height>30</height><align>center</align><font>font12</font><textcolor>FF7FB2E5</textcolor><label>$INFO[Window.Property(weather.day4.rain)]</label></control>
                     </control>
                 </control>
 
-                <!-- slide "app": scan from the couch -->
+                <!-- next days, wide: five of them, when nothing else is in
+                     the row but the app (two slots: 570 + 33 + 570) -->
                 <control type="group">
-                    <visible>String.IsEqual(Window.Property(slide),app) + !Player.HasAudio</visible>
-                    <animation effect="fade" time="400">VisibleChange</animation>
+                    <width>1173</width><height>304</height>
+                    <visible>!String.IsEmpty(Window.Property(weather.days)) + String.IsEqual(Window.Property(board.cards),0) + !Player.HasAudio</visible>
+                    <animation effect="fade" time="400">Visible</animation>
+                    <control type="image"><left>0</left><top>0</top><width>1173</width><height>304</height><texture border="24" colordiffuse="14FFFFFF">card.png</texture></control>
+                    <control type="label">
+                        <left>32</left><top>22</top><width>1109</width><height>28</height>
+                        <font>font12</font><textcolor>FFFFD23F</textcolor>
+                        <label>NEXT DAYS</label>
+                    </control>
+                    <!-- 5 x 221 from 32. Written out, like the hours. -->
+                    <control type="group"><left>32</left><top>58</top>
+                        <control type="label"><left>0</left><top>0</top><width>221</width><height>34</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.day1.name)]</label></control>
+                        <control type="image"><left>74</left><top>38</top><width>72</width><height>72</height><aspectratio>keep</aspectratio><texture>$INFO[Window.Property(weather.day1.icon),resource://resource.images.weathericons.default/,.png]</texture></control>
+                        <control type="label"><left>0</left><top>114</top><width>221</width><height>46</height><align>center</align><font>font37</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(weather.day1.high)]</label></control>
+                        <control type="label"><left>0</left><top>160</top><width>221</width><height>36</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.day1.low)]</label></control>
+                        <control type="label"><left>0</left><top>198</top><width>221</width><height>30</height><align>center</align><font>font12</font><textcolor>FF7FB2E5</textcolor><label>$INFO[Window.Property(weather.day1.rain)]</label></control>
+                    </control>
+                    <control type="group"><left>253</left><top>58</top>
+                        <control type="label"><left>0</left><top>0</top><width>221</width><height>34</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.day2.name)]</label></control>
+                        <control type="image"><left>74</left><top>38</top><width>72</width><height>72</height><aspectratio>keep</aspectratio><texture>$INFO[Window.Property(weather.day2.icon),resource://resource.images.weathericons.default/,.png]</texture></control>
+                        <control type="label"><left>0</left><top>114</top><width>221</width><height>46</height><align>center</align><font>font37</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(weather.day2.high)]</label></control>
+                        <control type="label"><left>0</left><top>160</top><width>221</width><height>36</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.day2.low)]</label></control>
+                        <control type="label"><left>0</left><top>198</top><width>221</width><height>30</height><align>center</align><font>font12</font><textcolor>FF7FB2E5</textcolor><label>$INFO[Window.Property(weather.day2.rain)]</label></control>
+                    </control>
+                    <control type="group"><left>474</left><top>58</top>
+                        <control type="label"><left>0</left><top>0</top><width>221</width><height>34</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.day3.name)]</label></control>
+                        <control type="image"><left>74</left><top>38</top><width>72</width><height>72</height><aspectratio>keep</aspectratio><texture>$INFO[Window.Property(weather.day3.icon),resource://resource.images.weathericons.default/,.png]</texture></control>
+                        <control type="label"><left>0</left><top>114</top><width>221</width><height>46</height><align>center</align><font>font37</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(weather.day3.high)]</label></control>
+                        <control type="label"><left>0</left><top>160</top><width>221</width><height>36</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.day3.low)]</label></control>
+                        <control type="label"><left>0</left><top>198</top><width>221</width><height>30</height><align>center</align><font>font12</font><textcolor>FF7FB2E5</textcolor><label>$INFO[Window.Property(weather.day3.rain)]</label></control>
+                    </control>
+                    <control type="group"><left>695</left><top>58</top>
+                        <control type="label"><left>0</left><top>0</top><width>221</width><height>34</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.day4.name)]</label></control>
+                        <control type="image"><left>74</left><top>38</top><width>72</width><height>72</height><aspectratio>keep</aspectratio><texture>$INFO[Window.Property(weather.day4.icon),resource://resource.images.weathericons.default/,.png]</texture></control>
+                        <control type="label"><left>0</left><top>114</top><width>221</width><height>46</height><align>center</align><font>font37</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(weather.day4.high)]</label></control>
+                        <control type="label"><left>0</left><top>160</top><width>221</width><height>36</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.day4.low)]</label></control>
+                        <control type="label"><left>0</left><top>198</top><width>221</width><height>30</height><align>center</align><font>font12</font><textcolor>FF7FB2E5</textcolor><label>$INFO[Window.Property(weather.day4.rain)]</label></control>
+                    </control>
+                    <control type="group"><left>916</left><top>58</top>
+                        <control type="label"><left>0</left><top>0</top><width>221</width><height>34</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.day5.name)]</label></control>
+                        <control type="image"><left>74</left><top>38</top><width>72</width><height>72</height><aspectratio>keep</aspectratio><texture>$INFO[Window.Property(weather.day5.icon),resource://resource.images.weathericons.default/,.png]</texture></control>
+                        <control type="label"><left>0</left><top>114</top><width>221</width><height>46</height><align>center</align><font>font37</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(weather.day5.high)]</label></control>
+                        <control type="label"><left>0</left><top>160</top><width>221</width><height>36</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.day5.low)]</label></control>
+                        <control type="label"><left>0</left><top>198</top><width>221</width><height>30</height><align>center</align><font>font12</font><textcolor>FF7FB2E5</textcolor><label>$INFO[Window.Property(weather.day5.rain)]</label></control>
+                    </control>
+                </control>
+
+                <!-- the app: scan from the couch. A card of its own when
+                     there's room, else a carousel slide. -->
+                <control type="group">
+                    <width>570</width><height>304</height>
+                    <visible>!String.IsEmpty(Window.Property(app.image)) + [[String.IsEqual(Window.Property(board.cards),1) + [!Player.HasAudio | String.IsEqual(Window.Property(slide),app)]] | String.IsEqual(Window.Property(board.cards),0)]</visible>
+                    <animation effect="fade" time="400">Visible</animation>
+                    <control type="image"><left>0</left><top>0</top><width>570</width><height>304</height><texture border="24" colordiffuse="14FFFFFF">card.png</texture></control>
                     <!-- 198 px = 33 modules x 6: drawn at its own size, never scaled -->
                     <control type="image">
                         <left>32</left><top>53</top><width>198</width><height>198</height>
                         <texture background="true">$INFO[Window.Property(app.image)]</texture>
                     </control>
                     <control type="label">
-                        <left>262</left><top>62</top><width>306</width><height>90</height>
+                        <left>262</left><top>62</top><width>276</width><height>90</height>
                         <aligny>top</aligny><wrapmultiline>true</wrapmultiline>
                         <font>font37</font><textcolor>FFF2F2F2</textcolor>
                         <label>[B]$INFO[Window.Property(app.title)][/B]</label>
                     </control>
                     <control type="textbox">
-                        <left>262</left><top>156</top><width>306</width><height>96</height>
+                        <left>262</left><top>156</top><width>276</width><height>96</height>
                         <font>font27</font><textcolor>FF8A8A8A</textcolor>
                         <label>$INFO[Window.Property(app.subtitle)]</label>
                     </control>

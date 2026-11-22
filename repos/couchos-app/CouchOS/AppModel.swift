@@ -27,17 +27,19 @@ enum Key: String, CaseIterable {
 }
 
 /// Things the TV can show. Plex is PM4K (it reactivates itself if already
-/// open) and is the TV's home: the Home button opens it. The rest are Kodi's
-/// own windows, offered under "Open on TV".
+/// open) and is the TV's home: the Home button opens it. The rest are offered
+/// under "Open on TV": the CouchOS catalog (search on the TV, made for the
+/// TV remote; the blue key opens it too) and Kodi's own windows.
 enum TVApp: String, CaseIterable, Identifiable {
-    case plex, photos, music, kodi
+    case plex, catalog, photos, music, kodi
     var id: String { rawValue }
 
-    static let secondary: [TVApp] = [.photos, .music, .kodi]
+    static let secondary: [TVApp] = [.catalog, .photos, .music, .kodi]
 
     var title: String {
         switch self {
         case .plex: "Plex"
+        case .catalog: "CouchOS search"
         case .photos: "Photos"
         case .music: "Music"
         case .kodi: "Kodi library"
@@ -47,6 +49,7 @@ enum TVApp: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .plex: "play.tv"
+        case .catalog: "magnifyingglass"
         case .photos: "photo.on.rectangle"
         case .music: "music.note"
         case .kodi: "square.grid.2x2"
@@ -56,6 +59,9 @@ enum TVApp: String, CaseIterable, Identifiable {
     var rpc: (method: String, params: [String: Any]) {
         switch self {
         case .plex: ("Addons.ExecuteAddon", ["addonid": "script.plexmod"])
+        // service.couchos keeps the catalog ready in memory and opens it on
+        // this notification: no add-on to start (seconds on the Pi).
+        case .catalog: ("JSONRPC.NotifyAll", ["sender": "couchos", "message": "catalog"])
         case .photos: ("GUI.ActivateWindow", ["window": "pictures"])
         case .music: ("GUI.ActivateWindow", ["window": "music"])
         case .kodi: ("GUI.ActivateWindow", ["window": "home"])

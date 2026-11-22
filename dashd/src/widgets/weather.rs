@@ -20,9 +20,10 @@ const API: &str = "https://api.open-meteo.com/v1/forecast";
 /// Columns the TV has for hours.
 const MAX_HOURS: usize = 6;
 const MAX_DAYS: usize = 7;
-/// Next days on the TV's "next days" slide. Every slot is always served
-/// (blank past the forecast), so a shorter forecast clears the old ones.
-const TV_DAYS: usize = 4;
+/// Next days on the TV: its "next days" card shows four, five when it is
+/// wide (nothing on the board). Every slot is always served (blank past
+/// the forecast), so a shorter forecast clears the old ones.
+const TV_DAYS: usize = 5;
 /// The duck on the TV, in pixels (within Kodi's 540 px texture limit).
 const DUCK_PX: u32 = 512;
 const DUCK_PNG: &str = "duck-";

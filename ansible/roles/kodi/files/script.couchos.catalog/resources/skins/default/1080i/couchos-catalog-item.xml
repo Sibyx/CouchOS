@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- CouchOS catalog: a movie, or a show with its seasons and episodes.
+
+       x   72 ...... 372  412 ...................................... 1848
+     y  72 poster         kicker, title, facts, genres, summary, people
+                          (while an episode is focused: that episode's)
+       470                buttons: Play / Resume, From the start, Refresh
+       580 season strip (shows only)
+       664 episode strip: stills 320 x 180, number and title, facts
+
+     Fanart behind everything, dimmed. Colours and fonts as the search
+     screen (couchos-catalog-main.xml). -->
+<window>
+    <defaultcontrol>400</defaultcontrol>
+    <animation effect="fade" time="200">WindowOpen</animation>
+    <animation effect="fade" time="150">WindowClose</animation>
+    <controls>
+        <control type="image">
+            <left>0</left><top>0</top><width>1920</width><height>1080</height>
+            <texture colordiffuse="FF000000">white.png</texture>
+        </control>
+        <control type="image">
+            <left>0</left><top>0</top><width>1920</width><height>1080</height>
+            <aspectratio>scale</aspectratio>
+            <fadetime>300</fadetime>
+            <texture background="true">$INFO[Window.Property(fanart)]</texture>
+        </control>
+        <control type="image">
+            <left>0</left><top>0</top><width>1920</width><height>1080</height>
+            <texture colordiffuse="DD000000">white.png</texture>
+        </control>
+
+        <control type="image">
+            <left>72</left><top>72</top><width>300</width><height>450</height>
+            <aspectratio>scale</aspectratio>
+            <fadetime>200</fadetime>
+            <texture background="true">$INFO[Window.Property(poster)]</texture>
+        </control>
+
+        <!-- the title (movie or show) -->
+        <control type="group">
+            <left>412</left><top>72</top>
+            <visible>!Control.HasFocus(420)</visible>
+            <control type="label"><left>0</left><top>0</top><width>1436</width><height>30</height><font>font12</font><textcolor>FFFFD23F</textcolor><label>$INFO[Window.Property(kicker)]</label></control>
+            <control type="label"><left>0</left><top>32</top><width>1436</width><height>60</height><font>font37</font><textcolor>FFF2F2F2</textcolor><label>[B]$INFO[Window.Property(title)][/B]</label></control>
+            <control type="label"><left>0</left><top>96</top><width>1436</width><height>40</height><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(meta)]</label></control>
+            <control type="label"><left>0</left><top>140</top><width>1436</width><height>32</height><font>font12</font><textcolor>FF8A8A8A</textcolor><label>$INFO[Window.Property(genres)]</label></control>
+            <control type="textbox"><left>0</left><top>184</top><width>1300</width><height>168</height><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(summary)]</label></control>
+            <control type="label"><left>0</left><top>358</top><width>1436</width><height>32</height><font>font12</font><textcolor>FF8A8A8A</textcolor><label>$INFO[Window.Property(people)]</label></control>
+        </control>
+        <!-- the focused episode -->
+        <control type="group">
+            <left>412</left><top>72</top>
+            <visible>Control.HasFocus(420)</visible>
+            <control type="label"><left>0</left><top>0</top><width>1436</width><height>30</height><font>font12</font><textcolor>FFFFD23F</textcolor><label>$INFO[Container(420).ListItem.Property(kicker)]</label></control>
+            <control type="label"><left>0</left><top>32</top><width>1436</width><height>60</height><font>font37</font><textcolor>FFF2F2F2</textcolor><label>[B]$INFO[Container(420).ListItem.Property(label)][/B]</label></control>
+            <control type="label"><left>0</left><top>96</top><width>1436</width><height>40</height><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Container(420).ListItem.Property(label2)]</label></control>
+            <control type="label"><left>0</left><top>140</top><width>1436</width><height>32</height><font>font12</font><textcolor>FF8A8A8A</textcolor><label>$INFO[Window.Property(title)]</label></control>
+            <control type="textbox"><left>0</left><top>184</top><width>1300</width><height>206</height><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Container(420).ListItem.Property(summary)]</label></control>
+        </control>
+
+        <control type="list" id="400">
+            <left>412</left><top>446</top><width>1436</width><height>76</height>
+            <ondown>410</ondown>
+            <onup>400</onup>
+            <orientation>horizontal</orientation>
+            <scrolltime>0</scrolltime>
+            <itemlayout width="300" height="76">
+                <control type="image"><left>0</left><top>4</top><width>284</width><height>68</height><texture border="24" colordiffuse="26FFFFFF">card.png</texture></control>
+                <control type="label"><left>0</left><top>4</top><width>284</width><height>68</height><align>center</align><aligny>center</aligny><font>font27</font><textcolor>FFF2F2F2</textcolor><label>$INFO[ListItem.Property(label)]</label></control>
+            </itemlayout>
+            <focusedlayout width="300" height="76">
+                <control type="image"><left>0</left><top>4</top><width>284</width><height>68</height><texture border="24" colordiffuse="26FFFFFF">card.png</texture></control>
+                <control type="image"><left>0</left><top>4</top><width>284</width><height>68</height><texture border="24" colordiffuse="FFFFD23F">card.png</texture><visible>Control.HasFocus(400)</visible></control>
+                <control type="label"><left>0</left><top>4</top><width>284</width><height>68</height><align>center</align><aligny>center</aligny><font>font27</font><textcolor>FF1D1D1D</textcolor><label>[B]$INFO[ListItem.Property(label)][/B]</label><visible>Control.HasFocus(400)</visible></control>
+                <control type="label"><left>0</left><top>4</top><width>284</width><height>68</height><align>center</align><aligny>center</aligny><font>font27</font><textcolor>FFF2F2F2</textcolor><label>$INFO[ListItem.Property(label)]</label><visible>!Control.HasFocus(400)</visible></control>
+            </focusedlayout>
+        </control>
+
+        <!-- ================= shows: seasons, then episodes ================= -->
+        <control type="group">
+            <visible>!String.IsEmpty(Window.Property(has_seasons))</visible>
+            <control type="list" id="410">
+                <left>72</left><top>572</top><width>1776</width><height>72</height>
+                <onup>400</onup>
+                <ondown>420</ondown>
+                <orientation>horizontal</orientation>
+                <scrolltime tween="quadratic">160</scrolltime>
+                <itemlayout width="236" height="72">
+                    <control type="label"><left>0</left><top>0</top><width>220</width><height>44</height><align>center</align><aligny>center</aligny><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[ListItem.Property(label)]</label></control>
+                    <control type="label"><left>0</left><top>40</top><width>220</width><height>26</height><align>center</align><font>font10</font><textcolor>FF5A5A5A</textcolor><label>$INFO[ListItem.Property(label2)]</label></control>
+                    <control type="image"><left>60</left><top>68</top><width>100</width><height>4</height><texture colordiffuse="FFFFD23F">white.png</texture><visible>String.IsEqual(ListItem.Property(current),1)</visible></control>
+                </itemlayout>
+                <focusedlayout width="236" height="72">
+                    <control type="image"><left>0</left><top>0</top><width>220</width><height>72</height><texture border="24" colordiffuse="FFFFD23F">card.png</texture><visible>Control.HasFocus(410)</visible></control>
+                    <control type="label"><left>0</left><top>0</top><width>220</width><height>44</height><align>center</align><aligny>center</aligny><font>font27</font><textcolor>FF1D1D1D</textcolor><label>[B]$INFO[ListItem.Property(label)][/B]</label><visible>Control.HasFocus(410)</visible></control>
+                    <control type="label"><left>0</left><top>40</top><width>220</width><height>26</height><align>center</align><font>font10</font><textcolor>FF1D1D1D</textcolor><label>$INFO[ListItem.Property(label2)]</label><visible>Control.HasFocus(410)</visible></control>
+                    <control type="label"><left>0</left><top>0</top><width>220</width><height>44</height><align>center</align><aligny>center</aligny><font>font27</font><textcolor>FFF2F2F2</textcolor><label>$INFO[ListItem.Property(label)]</label><visible>!Control.HasFocus(410)</visible></control>
+                    <control type="label"><left>0</left><top>40</top><width>220</width><height>26</height><align>center</align><font>font10</font><textcolor>FF8A8A8A</textcolor><label>$INFO[ListItem.Property(label2)]</label><visible>!Control.HasFocus(410)</visible></control>
+                    <control type="image"><left>60</left><top>68</top><width>100</width><height>4</height><texture colordiffuse="FFFFD23F">white.png</texture><visible>String.IsEqual(ListItem.Property(current),1) + !Control.HasFocus(410)</visible></control>
+                </focusedlayout>
+            </control>
+
+            <control type="list" id="420">
+                <left>72</left><top>668</top><width>1848</width><height>372</height>
+                <onup>410</onup>
+                <ondown>420</ondown>
+                <orientation>horizontal</orientation>
+                <scrolltime tween="quadratic">160</scrolltime>
+                <itemlayout width="352" height="372">
+                    <control type="image"><left>0</left><top>8</top><width>320</width><height>180</height><aspectratio>scale</aspectratio><texture background="true" colordiffuse="FFB8B8B8">$INFO[ListItem.Art(thumb)]</texture></control>
+                    <control type="image"><left>296</left><top>16</top><width>16</width><height>16</height><texture colordiffuse="FFFFD23F">dot.png</texture><visible>String.IsEqual(ListItem.Property(unwatched),1)</visible></control>
+                    <control type="progress"><left>0</left><top>182</top><width>320</width><height>6</height><info>ListItem.PercentPlayed</info><texturebg colordiffuse="66000000">white.png</texturebg><midtexture colordiffuse="FFFFD23F">white.png</midtexture><visible>Integer.IsGreater(ListItem.PercentPlayed,0)</visible></control>
+                    <control type="textbox"><left>0</left><top>200</top><width>320</width><height>64</height><font>font12</font><textcolor>FFB8B8B8</textcolor><label>$INFO[ListItem.Property(label)]</label></control>
+                    <control type="label"><left>0</left><top>268</top><width>320</width><height>28</height><font>font10</font><textcolor>FF5A5A5A</textcolor><label>$INFO[ListItem.Property(label2)]</label></control>
+                </itemlayout>
+                <focusedlayout width="352" height="372">
+                    <control type="image"><left>-6</left><top>2</top><width>332</width><height>192</height><texture border="24" colordiffuse="FFFFD23F">card.png</texture><visible>Control.HasFocus(420)</visible></control>
+                    <control type="image"><left>0</left><top>8</top><width>320</width><height>180</height><aspectratio>scale</aspectratio><texture background="true">$INFO[ListItem.Art(thumb)]</texture></control>
+                    <control type="image"><left>296</left><top>16</top><width>16</width><height>16</height><texture colordiffuse="FFFFD23F">dot.png</texture><visible>String.IsEqual(ListItem.Property(unwatched),1)</visible></control>
+                    <control type="progress"><left>0</left><top>182</top><width>320</width><height>6</height><info>ListItem.PercentPlayed</info><texturebg colordiffuse="66000000">white.png</texturebg><midtexture colordiffuse="FFFFD23F">white.png</midtexture><visible>Integer.IsGreater(ListItem.PercentPlayed,0)</visible></control>
+                    <control type="textbox"><left>0</left><top>200</top><width>320</width><height>64</height><font>font12</font><textcolor>FFF2F2F2</textcolor><label>[B]$INFO[ListItem.Property(label)][/B]</label></control>
+                    <control type="label"><left>0</left><top>268</top><width>320</width><height>28</height><font>font10</font><textcolor>FF8A8A8A</textcolor><label>$INFO[ListItem.Property(label2)]</label></control>
+                </focusedlayout>
+            </control>
+        </control>
+
+        <control type="label">
+            <left>72</left><top>1036</top><width>1776</width><height>30</height>
+            <font>font10</font><textcolor>FF5A5A5A</textcolor>
+            <label>[COLOR FFB8B8B8]OK / PLAY[/COLOR] play     [COLOR FFB8B8B8]CH +/-[/COLOR] next / previous season     [COLOR FFB8B8B8]1–9[/COLOR] season     [COLOR FFB8B8B8]0[/COLOR] specials     [COLOR FFB8B8B8]INFO[/COLOR] more     [COLOR FF7FB2E5]BLUE[/COLOR] search</label>
+            <visible>!String.IsEmpty(Window.Property(has_seasons))</visible>
+        </control>
+    </controls>
+</window>

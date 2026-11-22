@@ -66,6 +66,10 @@ kodi_settings:
   # puts it back to dashboard_enabled.
   screensaver.mode: "{{ 'screensaver.couchos.dashboard' if dashboard_enabled else 'screensaver.xbmc.builtin.black' }}"
   screensaver.time: 5
+  # Kodi's default keeps the screensaver off while any audio plays, which
+  # kept the dashboard away for good while music (or PM4K's theme music)
+  # played. The dashboard has a now-playing card, so idle is idle.
+  screensaver.disableforaudio: false
   # Kodi's own AirPlay (audio-only since iOS 9) cannot run beside
   # inputstream.airplay or UxPlay: same deviceid, a sender may pick it.
   services.airplay: false

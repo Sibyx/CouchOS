@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<addon id="script.couchos.catalog" name="CouchOS Catalog" version="0.2.0" provider-name="CouchOS">
+    <requires>
+        <import addon="xbmc.python" version="3.0.0"/>
+    </requires>
+    <!-- The catalog normally runs inside service.couchos, kept ready: the
+         blue key (userdata/keymaps/couchos.xml) and the phone ("Open on
+         TV") send NotifyAll couchos/catalog. Started as a script, it asks
+         service.couchos to open it, or runs on its own if that isn't up. -->
+    <extension point="xbmc.python.script" library="default.py">
+        <provides>executable</provides>
+    </extension>
+    <extension point="xbmc.addon.metadata">
+        <summary lang="en_GB">Search and browse Plex from couchd's index</summary>
+        <description lang="en_GB">The CouchOS catalog on the TV: instant search over the Plex index on the Pi, shows with their seasons and episodes, libraries, and play in Plex. Made for the TV remote.</description>
+        <platform>all</platform>
+        <license>MIT</license>
+    </extension>
+</addon>

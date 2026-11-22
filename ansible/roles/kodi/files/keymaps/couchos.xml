@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- CouchOS remote keys (userdata/keymaps/couchos.xml). Managed by Ansible.
+
+     Blue opens the CouchOS catalog (script.couchos.catalog) from anywhere
+     but full-screen video; pressed inside the catalog it goes back to search.
+     Red, green and yellow are passed on as themselves, so the catalog sees
+     them (Kodi's own remote.xml sends them to its TVChannels, Videos and Music
+     windows, out of PM4K's kiosk). Channel up/down are not in remote.xml's
+     <global> at all (the CEC adapter sends them as channelplus/channelminus):
+     here they page, which the catalog uses for rows, seasons and the grid;
+     in full-screen video they do nothing. PM4K's windows are script windows,
+     so <global> is what applies there. -->
+<keymap>
+    <global>
+        <remote>
+            <red>red</red>
+            <green>green</green>
+            <yellow>yellow</yellow>
+            <!-- service.couchos keeps the catalog ready and opens it on this
+                 (no script to start, which takes seconds on a Pi 3) -->
+            <blue>NotifyAll(couchos,catalog)</blue>
+            <channelplus>PageUp</channelplus>
+            <channelminus>PageDown</channelminus>
+        </remote>
+        <keyboard>
+            <f4>NotifyAll(couchos,catalog)</f4>
+        </keyboard>
+    </global>
+    <FullscreenVideo>
+        <remote>
+            <blue>blue</blue>
+            <channelplus>noop</channelplus>
+            <channelminus>noop</channelminus>
+        </remote>
+    </FullscreenVideo>
+</keymap>

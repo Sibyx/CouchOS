@@ -2,7 +2,13 @@
 
 The CouchOS dashboard daemon. Gathers widget data (clock, today's weather with a duck dressed for it, a message and TODO list written from the app, the frog of the day, the app's QR code) and serves it to every client: the TV, the phone app, the web page, anything on the LAN. No auth, like couchd.
 
-On the TV, a fixed grid on black, so nothing overlaps: three columns (time, date and today's weather; the duck and its line in a yellow bubble; the frog of the day) over a row of cards (the TODO list, the message, and a bottom-right card). The first five are always there; the TODO and message cards say so when empty. The bottom-right card shows **what is playing** while audio plays (AirPlay from Spotify and the like, Plex music: artwork, title, artist, album, progress; straight from Kodi, not dashd). The rest of the time it is a carousel, one slide every 20 s: the next four days, the app's QR code. When AirPlay starts playing audio only, Kodi opens the dashboard by itself (`service.couchos`, `watch.py`).
+On the TV, a fixed grid on black, so nothing overlaps: three columns (time, date and today's weather; the duck and its line in a yellow bubble; the frog of the day) over a row of three equal card slots. The three columns are always there. A **message** from the app is a yellow banner across the top of the centre and right columns, in big type (smaller past 110 characters), only while there is one: the duck shrinks under it and the frog's text takes the place of its photo. The row is flexible: it shows only cards with something in them, side by side, and a hidden card leaves its slot to the next. The cards, in order:
+- the TODO list, while it has items
+- **what is playing**, while audio plays (AirPlay from Spotify and the like, Plex music: artwork, title, artist, album, progress; straight from Kodi, not dashd)
+- the next days
+- the app's QR code
+
+Whatever doesn't fit shares the last slot as a carousel, one slide every 20 s. With nothing on the board and nothing playing, the next days go wide (five days) beside the QR code. When AirPlay starts playing audio only, Kodi opens the dashboard by itself (`service.couchos`, `watch.py`).
 
 ```
  Open-Meteo ─┐                 ┌─ GET /v1/views/tv ─► screensaver.couchos.dashboard (Kodi draws it)
@@ -10,7 +16,7 @@ On the TV, a fixed grid on black, so nothing overlaps: three columns (time, date
  (station) ──┘   (Rust)        └─ JSONRPC.NotifyAll "dashd/changed" ─► Kodi (no polling)
 ```
 
-**On the TV** the dashboard is Kodi's screensaver: Kodi shows it when the TV is idle (5 min), never over a video, and the first key from the TV remote or the phone goes back to Plex. couchd's `POST /api/dashboard {"show": true}` wakes the TV over CEC and opens it now (the app has it under *Open on TV → Dashboard*). `{"enabled": false}` turns the idle screen back to black.
+**On the TV** the dashboard is Kodi's screensaver: Kodi shows it when the TV is idle (5 min, also while music plays), never over a video, and the first key from the TV remote or the phone goes back to Plex. The window itself lives in the always-running `service.couchos`, which keeps the last view and opens it the moment Kodi announces the screensaver (no Python interpreter to start). couchd's `POST /api/dashboard {"show": true}` wakes the TV over CEC and opens it now (the app has it under *Open on TV → Dashboard*). `{"enabled": false}` turns the idle screen back to black.
 
 ## Design
 
@@ -47,7 +53,7 @@ All JSON answers carry `ETag`. Send `If-None-Match` to get a 304. Through Caddy 
 ## Widgets
 
 - **clock**: the TV draws it from Kodi's own time (`$INFO[System.Time(HH:mm)]`), so it costs nothing. The widget places it on the dashboard and names the timezone.
-- **weather**: Open-Meteo, no API key, every 15 min: now, the next hours, the next days, and the duck. The TV shows today (now, feels like, high/low, rain, sunrise–sunset, "next hours" columns, the duck and its line) and, on a carousel slide, the next four days (`day1`…`day4` keys, always served, blank past the forecast); `data.days` has all `days`. WMO codes map to Kodi's stock icon set (`resource.images.weathericons.default`, day and night variants); precipitation shows from 20 %. Params: `place`, `latitude`, `longitude`, `timezone`, `every_minutes` (15), `hours_step` (3), `hours_count` (4, max 6), `days` (5), `duck` (below).
+- **weather**: Open-Meteo, no API key, every 15 min: now, the next hours, the next days, and the duck. The TV shows today (now, feels like, high/low, rain, sunrise–sunset, "next hours" columns, the duck and its line) and the next days: four, or five on the wide card (`day1`…`day5` keys, always served, blank past the forecast); `data.days` has all `days`. WMO codes map to Kodi's stock icon set (`resource.images.weathericons.default`, day and night variants); precipitation shows from 20 %. Params: `place`, `latitude`, `longitude`, `timezone`, `every_minutes` (15), `hours_step` (3), `hours_count` (4, max 6), `days` (5), `duck` (below).
 - **the duck** (`weather.params.duck`): dressed for now and the next `look_ahead_hours` (3): the coldest "feels like" and the worst sky in that window, where an hour's rain or snow counts from `min_chance` % (30). Rules run in order; each one whose `when` holds puts items on slots, a later rule wins a slot, `none` empties it, and the last matching `say` is the duck's line. The defaults are in `default_rules()` in `src/duck.rs`: sun hat, sunglasses and ice cream from 26°; a cap from 18°; a sweater below 18°; a scarf below 10°; a beanie and winter jacket below 3°; mittens and boots below -3°; raincoat, rain hat, umbrella and boots in rain; everything warm in snow; a lantern in fog. The scene follows the sky (sun, moon and stars, clouds, rain, snow on the ground, lightning, fog bands, wind lines and a flying scarf from `windy_kmh`, 30).
   - `extra_rules`: appended to the defaults. `rules`: replace them.
   - A rule: `{"when": {...}, "wear": {slot: item}, "say": "..."}`. `when` (all optional, all must hold): `feels_below`, `feels_at_least`, `sky` (list of `clear`, `partly_cloudy`, `cloudy`, `fog`, `drizzle`, `rain`, `freezing_rain`, `snow`, `storm`), `rain_chance_at_least`, `wind_at_least`, `night`. `say` fills in `{temp}`, `{feels}`, `{high}`, `{low}`, `{rain_chance}`, `{wind}`.
@@ -56,13 +62,13 @@ All JSON answers carry `ETag`. Send `If-None-Match` to get a 304. Through Caddy 
   - `data.duck` has the outfit, the sky, the line, and both pictures (`image` PNG, `svg`). `DUCK_PREVIEW=/dir cargo test duck::tests::preview -- --ignored` renders a gallery of typical days.
 - **board**: a message and a TODO list, written from the app (Settings → Dashboard) or anything that can POST. Kept in `$XDG_STATE_HOME/dashd/<name>.json`, so a restart keeps it. Every answer is the whole board:
   ```
-  POST /v1/widgets/board  {"op": "message", "text": "Dinner at 7?", "from": "Jakub"}   ("text": "" takes it down)
+  POST /v1/widgets/board  {"op": "message", "text": "Dinner at 7?"}   ("text": "" takes it down; an optional "from" is kept in data, not shown)
                           {"op": "add", "text": "Buy milk"}        {"op": "done", "id": 3}   ("done": false reopens)
                           {"op": "edit", "id": 3, "text": "..."}   {"op": "remove", "id": 3}   {"op": "clear_done"}
   ```
   The TV lists open items first, then done ones dimmed for `keep_done_hours` (12); the app keeps them until cleared. Text is one line per item (80 chars), the message up to 280 chars; on the TV, `[` `]` are shown as `(` `)` (Kodi markup) and emoji are dropped (Kodi's fonts have none). Params: `name` ("board"), `rows` (6), `keep_done_hours`, `message_hours` (0 = until replaced).
 - **qr**: a QR code drawn once at start, at a whole number of pixels per module so it stays crisp. The TV's `app` widget points at the app's TestFlight invite (`app_build_url` in Ansible); an empty `url` hides it. Params: `url`, `title`, `subtitle`.
-- **frog**: one of ~7,900 Anura species on iNaturalist each day. The pick is a hash of the local date, so it is the same frog after a restart. It shows the Latin name, common name, family, IUCN status, a Wikipedia summary and a CC-licensed photo with its attribution; photos without a licence are skipped. The TV gets a shorter summary: whole sentences up to about 170 characters, without the opening "… is a species of frog in the family …". `data.summary` keeps the full text. The pick and its photo are saved, so the day costs three API calls. Param: `taxon_id` (default 20979, Anura).
+- **frog**: one of ~7,900 Anura species on iNaturalist each day. The pick is a hash of the local date, so it is the same frog after a restart. It shows the Latin name, common name, family, IUCN status, a Wikipedia summary and a CC-licensed photo with its attribution; photos without a licence are skipped. The TV gets a shorter summary: whole sentences up to about 260 characters (five lines), without the opening "… is a species of frog in the family …". `data.summary` keeps the full text. The pick and its photo are saved, so the day costs three API calls. Param: `taxon_id` (default 20979, Anura).
 
 ## Adding a widget
 
@@ -71,7 +77,7 @@ All JSON answers carry `ETag`. Send `If-None-Match` to get a 304. Through Caddy 
    - **Pushed** (the weather station POSTs readings): `handle`. Return the new `Output` and dashd stores it, bumps the version and notifies Kodi. Keep the last reading with `ctx.state` so a restart shows it.
    - **Stateful with commands** (like `board`): `handle` takes `{"op": ...}`, updates its state in `ctx.state`, and returns the whole output. `initial` loads it at start. `handle` runs on HTTP threads beside the scheduler, so keep the state behind a `Mutex`.
 2. Add it to `KINDS` in `src/widgets/mod.rs` and to `dashd_widgets` in `ansible/group_vars/all.yml`.
-3. For the TV: put its `view` keys in `screensaver-couchos-dashboard.xml` as `$INFO[Window.Property(<id>.<key>)]`, and add the widget to the fixture in `widgets::skin_contract`: that test fails when the skin binds a key dashd does not serve (an empty slot on the TV otherwise fails silently). The phone and web read `data` instead. The skin's grid has no free cell: a new widget either takes a carousel slide (a group in the bottom-right card, visible on `String.IsEqual(Window.Property(slide),<name>)`, plus a line in `SLIDES` in `dashboard.py`) or replaces something.
+3. For the TV: put its `view` keys in `screensaver-couchos-dashboard.xml` as `$INFO[Window.Property(<id>.<key>)]`, and add the widget to the fixture in `widgets::skin_contract`: that test fails when the skin binds a key dashd does not serve (an empty slot on the TV otherwise fails silently). The phone and web read `data` instead. A new widget goes in the bottom row as a card: a 570-wide group in its `grouplist`. Its `visible` condition says when it has a slot of its own and when it is a carousel slide (`String.IsEqual(Window.Property(slide),<name>)`, plus a line in `SLIDES` in `dashboard.py`); follow the next-days and app cards. Three slots fit.
 4. Rebuild (`./build.sh`) before the playbook: it refuses a build older than `src/`.
 
 ```sh

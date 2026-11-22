@@ -24,6 +24,9 @@ use crate::error::{Error, Result};
 use crate::widget::{self, Ctx, Output, Refresh, View, Widget};
 
 const MESSAGE_CHARS: usize = 280;
+/// Up to this long, the TV's message banner uses its big type (two lines
+/// of font37 across 1144 px); longer ones the smaller one (four lines).
+const MESSAGE_BIG_CHARS: usize = 110;
 const ITEM_CHARS: usize = 80;
 const MAX_ITEMS: usize = 40;
 /// Rows the TV has.
@@ -213,8 +216,14 @@ impl Board {
         let visible: Vec<&Item> = open.iter().copied().chain(state.items.iter().filter(shown_done)).collect();
 
         let mut view = View::new();
+        // The TV shows the message as a banner, without its author ("from"
+        // is still accepted and kept in `data`, for apps that send it).
+        // Long ones get the banner's smaller type.
         view.insert("message".into(), message.map_or_else(String::new, |m| kodi_text(&m.text)));
-        view.insert("from".into(), message.and_then(|m| m.from.as_deref()).map_or_else(String::new, |f| format!("— {}", kodi_text(f))));
+        view.insert(
+            "message_long".into(),
+            if message.is_some_and(|m| m.text.chars().count() > MESSAGE_BIG_CHARS) { "true".into() } else { String::new() },
+        );
         view.insert("items".into(), if visible.is_empty() { String::new() } else { "true".into() });
         view.insert(
             "count".into(),
@@ -294,7 +303,12 @@ mod tests {
         assert_eq!(out.view["message"], "Dinner at (7)?[CR]Love you");
         assert_eq!(out.data["message"]["text"], "Dinner at [7]? 🍄\nLove you ❤️");
         assert_eq!(kodi_text("typed [CR] and (CR)"), "typed (CR) and (CR)");
-        assert_eq!(out.view["from"], "— Jakub");
+        assert!(!out.view.contains_key("from"), "the TV no longer shows the author");
+        assert_eq!(out.data["message"]["from"], "Jakub");
+        assert_eq!(out.view["message_long"], "");
+        let long = board.handle(&ctx, json!({"op": "message", "text": "x".repeat(MESSAGE_BIG_CHARS + 1)})).unwrap();
+        assert_eq!(long.view["message_long"], "true");
+        board.handle(&ctx, json!({"op": "message", "text": "Dinner at [7]? 🍄\nLove you ❤️", "from": "Jakub"})).unwrap();
         for t in ["Milk", "Bread", "Eggs", "Coffee"] {
             board.handle(&ctx, json!({"op": "add", "text": t})).unwrap();
         }

@@ -352,11 +352,11 @@ class Catalog:
         self.db = sqlite3.connect(CATALOG_DB, check_same_thread=False, isolation_level=None, timeout=10)
         self.db.row_factory = sqlite3.Row
         self._schema()
-        # Reads use their own connection: in WAL mode they don't wait for a
-        # sync writing a page (which held searches up for seconds).
-        self._read_lock = threading.Lock()
-        self.reader = sqlite3.connect(CATALOG_DB, check_same_thread=False, isolation_level=None, timeout=10)
-        self.reader.row_factory = sqlite3.Row
+        # Reads use their own connections: in WAL mode they don't wait for a
+        # sync writing a page (which held searches up for seconds), nor for
+        # each other (one shared reader made every phone and TV request
+        # queue behind the slowest search). A few, reused.
+        self._readers: queue.SimpleQueue = queue.SimpleQueue()
         self._lanes = {"sync": queue.Queue(), "items": queue.Queue()}
         self._queued: set[tuple] = set()
         self._queued_lock = threading.Lock()
@@ -402,27 +402,61 @@ class Catalog:
                 CREATE INDEX IF NOT EXISTS items_section ON items(section, type);
                 CREATE INDEX IF NOT EXISTS items_parent ON items(parent, idx);
                 CREATE INDEX IF NOT EXISTS items_grandparent ON items(grandparent, parent_idx, idx);
-                CREATE VIRTUAL TABLE IF NOT EXISTS items_fts USING fts5(
-                    title, show_title, extra, content='items', content_rowid='rowid',
-                    tokenize='unicode61 remove_diacritics 2', prefix='2 3');
-                CREATE TRIGGER IF NOT EXISTS items_ai AFTER INSERT ON items BEGIN
-                    INSERT INTO items_fts(rowid, title, show_title, extra)
-                    VALUES (new.rowid, new.title, new.show_title, new.extra);
-                END;
-                CREATE TRIGGER IF NOT EXISTS items_ad AFTER DELETE ON items BEGIN
-                    INSERT INTO items_fts(items_fts, rowid, title, show_title, extra)
-                    VALUES ('delete', old.rowid, old.title, old.show_title, old.extra);
-                END;
-                CREATE TRIGGER IF NOT EXISTS items_au AFTER UPDATE OF title, show_title, extra ON items
-                WHEN old.title IS NOT new.title OR old.show_title IS NOT new.show_title OR old.extra IS NOT new.extra
-                BEGIN
-                    INSERT INTO items_fts(items_fts, rowid, title, show_title, extra)
-                    VALUES ('delete', old.rowid, old.title, old.show_title, old.extra);
-                    INSERT INTO items_fts(rowid, title, show_title, extra)
-                    VALUES (new.rowid, new.title, new.show_title, new.extra);
-                END;
+                -- Short searches ("s"): titles starting with it, per type.
+                CREATE INDEX IF NOT EXISTS items_title ON items(type, sort_title COLLATE NOCASE);
             """)
+            self._fts()
             self.db.execute("INSERT OR REPLACE INTO meta VALUES ('schema', ?)", (SCHEMA,))
+
+    FTS_SQL = """
+        CREATE VIRTUAL TABLE items_fts USING fts5(
+            title, show_title, extra, type, content='items', content_rowid='rowid',
+            tokenize='unicode61 remove_diacritics 2', prefix='2 3');
+        CREATE TRIGGER items_ai AFTER INSERT ON items BEGIN
+            INSERT INTO items_fts(rowid, title, show_title, extra, type)
+            VALUES (new.rowid, new.title, new.show_title, new.extra, new.type);
+        END;
+        CREATE TRIGGER items_ad AFTER DELETE ON items BEGIN
+            INSERT INTO items_fts(items_fts, rowid, title, show_title, extra, type)
+            VALUES ('delete', old.rowid, old.title, old.show_title, old.extra, old.type);
+        END;
+        CREATE TRIGGER items_au AFTER UPDATE OF title, show_title, extra, type ON items
+        WHEN old.title IS NOT new.title OR old.show_title IS NOT new.show_title OR old.extra IS NOT new.extra
+            OR old.type IS NOT new.type
+        BEGIN
+            INSERT INTO items_fts(items_fts, rowid, title, show_title, extra, type)
+            VALUES ('delete', old.rowid, old.title, old.show_title, old.extra, old.type);
+            INSERT INTO items_fts(rowid, title, show_title, extra, type)
+            VALUES (new.rowid, new.title, new.show_title, new.extra, new.type);
+        END;
+    """
+
+    def _fts(self) -> None:
+        """The search index. Each entry's type is in it too, so a search for
+        movies only looks at movies inside the index: before, every group
+        scored every match of every type and dropped the others afterwards
+        (a one-letter search took ~3 s on the Pi 3). An index without the
+        type column is rebuilt from the items in place; nothing is synced
+        again from Plex."""
+        row = self.db.execute("SELECT sql FROM sqlite_master WHERE name='items_fts'").fetchone()
+        if row and "type," in row[0].replace(" ", ""):
+            return
+        started = time.monotonic()
+        with self._db_lock:
+            # One transaction: a failure leaves the old index as it was.
+            try:
+                self.db.executescript(
+                    "BEGIN IMMEDIATE;"
+                    "DROP TRIGGER IF EXISTS items_ai; DROP TRIGGER IF EXISTS items_ad; DROP TRIGGER IF EXISTS items_au;"
+                    "DROP TABLE IF EXISTS items_fts;"
+                    + self.FTS_SQL
+                    + "INSERT INTO items_fts(items_fts) VALUES ('rebuild'); COMMIT;")
+            except sqlite3.Error:
+                if self.db.in_transaction:
+                    self.db.execute("ROLLBACK")
+                raise
+        if row:
+            log.info("catalog: search index rebuilt with types in %.1f s", time.monotonic() - started)
 
     @contextmanager
     def _tx(self):
@@ -436,8 +470,15 @@ class Catalog:
             self.db.execute("COMMIT")
 
     def _query(self, sql: str, params: Iterable = ()) -> list[sqlite3.Row]:
-        with self._read_lock:
-            return self.reader.execute(sql, tuple(params)).fetchall()
+        try:
+            reader = self._readers.get_nowait()
+        except queue.Empty:
+            reader = sqlite3.connect(CATALOG_DB, check_same_thread=False, isolation_level=None, timeout=10)
+            reader.row_factory = sqlite3.Row
+        try:
+            return reader.execute(sql, tuple(params)).fetchall()
+        finally:
+            self._readers.put(reader)
 
     def _meta(self, key: str) -> str | None:
         rows = self._query("SELECT v FROM meta WHERE k=?", (key,))
@@ -977,6 +1018,27 @@ class Catalog:
                            "LIMIT ? OFFSET ?", (section, kind, min(max(1, size), 200), max(0, start)))
         return {"total": total, "items": [json.loads(r["data"]) for r in rows]}
 
+    def letters(self, section: str, unwatched: bool) -> dict:
+        """Where each first character starts in the title-sorted listing
+        (section(sort="title") order), for the TV's A-Z jump. Empty until the
+        library is indexed: the server's own listing has no such offsets."""
+        if not section.isdigit():
+            raise PlexError(HTTPStatus.BAD_REQUEST, "section must be a number")
+        info = self._query("SELECT type, full_synced_at FROM sections WHERE key=?", (section,))
+        if not info or not info[0]["full_synced_at"]:
+            return {"letters": []}
+        kind = SECTION_TYPES[info[0]["type"]][0]
+        where = "section=? AND type=?" + (" AND unwatched=1" if unwatched else "")
+        # upper() and NOCASE both fold ASCII only, so the groups come out in
+        # the listing's own order (by first character, then the rest).
+        rows = self._query(f"""SELECT upper(substr(sort_title, 1, 1)) AS c, COUNT(*) AS n FROM items
+                               WHERE {where} GROUP BY c ORDER BY c COLLATE NOCASE""", (section, kind))
+        out, start = [], 0
+        for r in rows:
+            out.append({"letter": r["c"], "start": start, "count": r["n"]})
+            start += r["n"]
+        return {"letters": out}
+
     def _live_section(self, section: str, start: int, size: int, sort: str, unwatched: bool) -> dict:
         sorts = {"title": "titleSort", "added": "addedAt:desc", "year": "year:desc",
                  "rating": "audienceRating:desc", "watched": "lastViewedAt:desc"}
@@ -994,32 +1056,53 @@ class Catalog:
         otherwise list every one of its episodes)."""
         words = [w for w in re.findall(r"\w+", text.lower()) if w][:8]
         groups = []
+        limit = max(1, min(int(limit), 50))
         if not words:
             return {"groups": groups, "indexed": self.indexed()}
         if not self.indexed():
             return self._live_search(text)
-        anywhere = " ".join(f'"{w}"*' for w in words)
-        in_title = " ".join(f'title : "{w}"*' for w in words)
         wanted = _fold(" ".join(words))
+        # The words in the title, show and extra columns only (never the
+        # type column: "movie" would match every movie).
+        anywhere = "{title show_title extra} : (%s)" % " ".join(f'"{w}"*' for w in words)
+        in_title = "title : (%s)" % " ".join(f'"{w}"*' for w in words)
         kinds = [(g, t, m) for g, t, m in (("movie", "Movies", anywhere), ("show", "Shows", anywhere),
                                            ("episode", "Episodes", in_title)) if kind in (None, "", "all", g)]
         found = {}
-        for group, _, match in kinds:
-            found[group] = self._query("""SELECT items.data, bm25(items_fts, 10.0, 4.0, 1.0) AS score
-                                          FROM items_fts JOIN items ON items.rowid = items_fts.rowid
-                                          WHERE items_fts MATCH ? AND items.type=?
-                                          AND items.section IN (SELECT key FROM sections WHERE enabled=1)
-                                          ORDER BY score LIMIT ?""", (match, group, limit * 4))
-        if not any(found.values()) and len(text.strip()) >= 3:
+        if len(wanted) < 3:
+            # One or two letters match most of the library: rank-scoring
+            # every match is what took seconds. Titles starting with them
+            # instead, straight from an index; episodes only from 3 letters.
+            for group, _, _ in kinds:
+                if group == "episode":
+                    continue
+                found[group] = self._query(f"""SELECT data, 0.0 AS score FROM items INDEXED BY items_title
+                                               WHERE type=? AND sort_title >= ? COLLATE NOCASE
+                                               AND sort_title < ? COLLATE NOCASE
+                                               AND section IN (SELECT key FROM sections WHERE enabled=1)
+                                               ORDER BY sort_title COLLATE NOCASE LIMIT ?""",
+                                           (group, wanted, wanted + "\U0010ffff", limit))
+        else:
+            for group, _, match in kinds:
+                found[group] = self._query("""SELECT items.data, bm25(items_fts, 10.0, 4.0, 1.0, 0.0) AS score
+                                              FROM items_fts JOIN items ON items.rowid = items_fts.rowid
+                                              WHERE items_fts MATCH ? AND items.section IN
+                                                  (SELECT key FROM sections WHERE enabled=1)
+                                              ORDER BY score LIMIT ?""",
+                                           (f"type : {group} AND {match}", limit * 3))
+        if not any(found.values()) and len(text.strip()) >= 4:
             # Last resort, for the middle of a word ("troville" in
-            # "Zootroville"): a scan of the titles (episodes are most of
-            # them, ~0.6 s on a Pi 3), so only when words found nothing.
+            # "Zootroville"): a scan of movie and show titles, only when the
+            # words found nothing (episodes are most of the titles: ~0.6 s
+            # on a Pi 3, so not those).
             like = "%" + text.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
             for group, _, _ in kinds:
+                if group == "episode":
+                    continue
                 found[group] = self._query("""SELECT data, 0.0 AS score FROM items
                                               WHERE type=? AND title LIKE ? ESCAPE '\\'
                                               AND section IN (SELECT key FROM sections WHERE enabled=1)
-                                              ORDER BY sort_title COLLATE NOCASE LIMIT ?""", (group, like, limit * 4))
+                                              ORDER BY sort_title COLLATE NOCASE LIMIT ?""", (group, like, limit))
         for group, title, _ in kinds:
             rows = found.get(group)
             if not rows:

@@ -149,7 +149,10 @@ GET  /api/plex                        the Plex server couchd browses (PM4K's sig
 GET  /api/plex/hubs                   home rows: Continue Watching, On Deck, ... (live, served from a 60 s copy)
 GET  /api/plex/sections               movie and show libraries in the index, with counts
 GET  /api/plex/sections/{id}?start=0&size=60&sort=added|watched|title|year|rating&unwatched=1
-GET  /api/plex/search?q=...&type=all|movie|show|episode   grouped, best group first
+GET  /api/plex/sections/{id}/letters[?unwatched=1]   where each first character starts in the
+                                      title-sorted listing (the TV catalog's A-Z jump); empty until indexed
+GET  /api/plex/search?q=...&type=all|movie|show|episode[&limit=30]   grouped, best group first
+                                      (one or two letters: movies and shows whose title starts with them)
 GET  /api/plex/items/{ratingKey}[?fresh=1]   details; shows/seasons with children and up_next;
                                       fresh: ask the server first (4 s), else the copy ("stale")
 GET  /api/plex/art?path=/library/...&w=300&h=450   artwork (JPEG) from the cache on the Pi
@@ -176,6 +179,41 @@ The app's Browse tab shows the Plex catalog. **Play** makes Plex on the TV (PM4K
 - **Controls** in the app: the drive button on Browse opens the index (state, progress, contents, artwork cache; per library: in the index or not, keep artwork, check, full sync; rebuild). Every movie, show, season and episode has a long-press menu (and ⋯ on its screen) to refresh it from Plex or save or remove its artwork, for it and everything under it.
 - Play: couchd sends Kodi `JSONRPC.NotifyAll {"sender": "couchos", "message": "open", "data": {"key": ...}}` (and starts PM4K first if it isn't running). `ansible/roles/kodi/files/pm4k-patches/0001-couchos-remote-open.patch` makes PM4K's home window open that item with the same code a click on a home row uses. Transcoding (HEVC), resume, subtitles and watched state stay PM4K's.
 - `kodi-addons.py install --patches DIR` applies the patches to a fresh copy of the pinned PM4K commit and installs it only if every patch applies. Its marker records the commit plus a hash of the patches, so changing a patch reinstalls PM4K. When bumping `pm4k_ref`, check the patch still applies: `patch -p1 --dry-run`.
+
+### The catalog on the TV
+
+`script.couchos.catalog` (`ansible/roles/kodi/files/`) is the same index on the TV, driven by the TV remote: search answers as you type, without going through PM4K's screens or the Plex server. Open it with the remote's **blue** key (`userdata/keymaps/couchos.xml`; F4 on a keyboard), or from the phone: Remote → Open on TV → CouchOS search. Everything it shows comes from couchd (`resources/couchd.json`, written by Ansible); **Play** closes the catalog and goes through `/api/plex/play`, so PM4K plays it as if it came from the phone.
+
+**Kept ready.** Starting any Python add-on in Kodi starts a Python interpreter, seconds on a Pi 3. So `service.couchos` (always running) holds the catalog and the dashboard in memory and opens them on a notification, with nothing to start:
+- the catalog on `JSONRPC.NotifyAll {"sender": "couchos", "message": "catalog"}` (the blue key's `NotifyAll(couchos,catalog)`, the phone), its home rows and libraries already built (refreshed every 90 s while it's closed);
+- the dashboard when Kodi announces its screensaver. `screensaver.couchos.dashboard` is still Kodi's screensaver, so Kodi decides when (5 min idle, `screensaver.time`; never over video; gone on the first key), and its script returns at once;
+- couchd's commands (CEC power, AirPlay video to the front, dashboard now) as `NotifyAll {"sender": "couchos", "message": "command", "data": {"command": "cec_on"}}`.
+
+`Window(Home).Property(couchos.host)` says it is up; without it couchd, the launcher and the screensaver script start their scripts as before. couchd also waits up to 0.6 s for the service to confirm a command (`couchos.ack`) and starts the script when it doesn't. An open catalog closes for the dashboard, when a video starts, and when another window opens over it (Plex or Kodi's photos from the phone; checked once a second), so Kodi never comes back to it afterwards. `screensaver.disableforaudio` is off (`kodi_settings`): Kodi's default kept the dashboard away for as long as any audio played, PM4K's theme music included. PM4K itself doesn't hold the screensaver off (no inhibit, no idle resets at the pinned `pm4k_ref`).
+
+**Responsive.** Each key waits for the catalog's Python callback, so nothing slow runs there: searches run one at a time on a worker and only the newest query is sent, results are built off the callback thread, rows hold 15, and Kodi moves the focus itself (between the rows, in the grid). In couchd, the search index holds each entry's type (a group only scores its own type; a one-letter search took ~3 s on the Pi), one or two letters use a title index, and reads no longer wait for each other. List text is in item properties, not labels: Kodi jumps a list by label on the number keys, which threw the focus around while typing.
+
+- **Search:** a letter grid on the left, results in rows on the right (Movies, Shows, Episodes, best group first). With nothing typed, the rows are Plex's home rows. **Keyboard** opens Kodi's own keyboard, which the phone's keyboard sheet fills.
+- **A show is one screen:** seasons in a strip, the season's episodes under it, with the focused episode's details at the top. An episode in the results opens its show on that season with the episode selected. A season opens its show on that season.
+- **Libraries:** a poster grid per library, loaded as you scroll, with sort, unwatched only and jump to a letter.
+
+Keys. Arrows, OK, Return and Play are enough for everything; the rest are shortcuts.
+
+| Key | Search | Show / movie | Library |
+|---|---|---|---|
+| OK | type the letter, open the title | play (button or episode) | open the title |
+| Return | close the catalog | back to search | back |
+| Play | play (a show: its next episode) | play the focused episode, else the main button | play |
+| Info / menu | play, from the start, open the show, refresh from Plex | the same, for the focused episode | the same |
+| 2-9 | type like a phone (multi-tap), 0 space | season N, 0 specials | jump to a letter (multi-tap) |
+| CH +/- | three rows up or down | next / previous season | page |
+| Red | delete a letter | | jump to letter (a list) |
+| Green | all / movies / shows / episodes | | sort |
+| Yellow | to the libraries | | unwatched only |
+| Blue | back to search, from anywhere in the catalog | | |
+| Stop | close the catalog | | |
+
+Which keys reach Kodi over HDMI-CEC depends on the TV and the remote (a Samsung One Remote may lack colour and number keys, or offer them only on the TV's on-screen pad). `couchos.xml` also maps channel up/down, which Kodi's own keymap leaves out. The catalog logs every action id and button code at debug level (`script.couchos.catalog: action ...` in `kodi.log`) to map a new remote.
 
 ## Limits of the hardware
 

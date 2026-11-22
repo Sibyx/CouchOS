@@ -121,7 +121,7 @@ fn tv_attribution(attribution: &str) -> String {
 }
 
 /// Room for three lines on the TV.
-const TV_SUMMARY_CHARS: usize = 170;
+const TV_SUMMARY_CHARS: usize = 260;
 
 /// The summary for the TV: without the opening "X is a species of frog in
 /// the family Y." (the name and family are already on screen), and only

@@ -27,6 +27,7 @@ Standard library only.
 from __future__ import annotations
 
 import collections
+import itertools
 import json
 import logging
 import os
@@ -132,6 +133,37 @@ def kodi_rpc(method: str, params: dict | None = None, timeout: float = 5) -> obj
     return reply.get("result")
 
 
+HOST_LABEL = "Window(10000).Property(couchos.host)"
+ACK_LABEL = "Window(10000).Property(couchos.ack)"
+ACK_WAIT = 0.6  # seconds service.couchos has to confirm a command
+_command_ids = itertools.count(int(time.time()))
+
+
+def kodi_command(command: str, timeout: float = 5) -> None:
+    """Run one of service.couchos's commands (couchos_commands.py) in Kodi.
+
+    service.couchos is resident: a notification runs the command at once,
+    and it confirms by putting the command's id on Kodi's home window.
+    NotifyAll answers OK whether or not anyone handled it, so without that
+    confirmation (the service isn't up, or its callbacks wait behind a dialog
+    in the catalog) this starts the add-on instead (Addons.ExecuteAddon): a
+    Python interpreter in Kodi first, seconds on a Pi 3, but it runs. The
+    commands are idempotent, so a late confirmation running it twice is
+    harmless."""
+    labels = kodi_rpc("XBMC.GetInfoLabels", {"labels": [HOST_LABEL]}, timeout=timeout) or {}
+    if labels.get(HOST_LABEL):
+        ack = str(next(_command_ids))
+        kodi_rpc("JSONRPC.NotifyAll", {"sender": "couchos", "message": "command",
+                                        "data": {"command": command, "id": ack}}, timeout=timeout)
+        deadline = time.monotonic() + ACK_WAIT
+        while time.monotonic() < deadline:
+            time.sleep(0.05)
+            if (kodi_rpc("XBMC.GetInfoLabels", {"labels": [ACK_LABEL]}, timeout=timeout) or {}).get(ACK_LABEL) == ack:
+                return
+        log.warning("service.couchos did not confirm %s; starting it as a script", command)
+    kodi_rpc("Addons.ExecuteAddon", {"addonid": "service.couchos", "params": [command]}, timeout=timeout)
+
+
 def read_first_line(path: str) -> str | None:
     try:
         return Path(path).read_text().split("\n", 1)[0].strip()
@@ -151,7 +183,7 @@ class Cec:
         if unit_active("kodi.service"):
             try:
                 command = "cec_on" if power == "on" else "cec_standby"
-                kodi_rpc("Addons.ExecuteAddon", {"addonid": "service.couchos", "params": [command]})
+                kodi_command(command)
                 return "kodi"
             except (OSError, ApiError) as exc:
                 log.warning("CEC via Kodi failed (%s), trying cec-ctl", exc)
@@ -420,7 +452,7 @@ class AirPlay:
                 window = kodi_rpc("GUI.GetProperties", {"properties": ["currentwindow"]}, timeout=2)
                 if window["currentwindow"]["id"] == FULLSCREEN_VIDEO and self._playing_airplay():
                     return
-                kodi_rpc("Addons.ExecuteAddon", {"addonid": "service.couchos", "params": ["show_video"]}, timeout=3)
+                kodi_command("show_video", timeout=3)
             except (OSError, ApiError, KeyError, TypeError) as exc:
                 log.debug("bring video to front: %s", exc)
             time.sleep(1)
@@ -1050,7 +1082,7 @@ class Dashboard:
         if show:
             # Wakes the TV over CEC, waits, then starts the screensaver (see
             # service.couchos). Asynchronous: returns at once.
-            kodi_rpc("Addons.ExecuteAddon", {"addonid": "service.couchos", "params": ["dashboard"]})
+            kodi_command("dashboard")
         return self.status()
 
 
@@ -1301,8 +1333,10 @@ class App:
                     sort=query.get("sort", "title"),
                     unwatched=query.get("unwatched") in ("1", "true"),
                 )
+            case ("GET", ["plex", "sections", section, "letters"]):
+                return catalog.letters(section, unwatched=query.get("unwatched") in ("1", "true"))
             case ("GET", ["plex", "search"]):
-                return catalog.search(query.get("q", ""), query.get("type"))
+                return catalog.search(query.get("q", ""), query.get("type"), limit=int(query.get("limit", 30)))
             case ("GET", ["plex", "items", key]):
                 return catalog.item(key, fresh=query.get("fresh") in ("1", "true"))
             case ("GET", ["plex", "art"]):

@@ -90,6 +90,43 @@
     directory_mode: "0755"
   notify: Restart kodi
 
+# The Plex catalog on the TV (couchd's index, made for the remote).
+- name: CouchOS catalog add-on
+  ansible.builtin.copy:
+    src: script.couchos.catalog/
+    dest: "{{ tv_home }}/.kodi/addons/script.couchos.catalog/"
+    owner: "{{ tv_user }}"
+    group: "{{ tv_user }}"
+    mode: "0644"
+    directory_mode: "0755"
+  notify: Restart kodi
+
+- name: CouchOS catalog add-on, where couchd is
+  ansible.builtin.template:
+    src: couchos-catalog.json.j2
+    dest: "{{ tv_home }}/.kodi/addons/script.couchos.catalog/resources/couchd.json"
+    owner: "{{ tv_user }}"
+    group: "{{ tv_user }}"
+    mode: "0644"
+
+- name: Keymaps directory
+  ansible.builtin.file:
+    path: "{{ tv_home }}/.kodi/userdata/keymaps"
+    state: directory
+    owner: "{{ tv_user }}"
+    group: "{{ tv_user }}"
+    mode: "0755"
+
+# Blue opens the catalog; red/green/yellow reach it as themselves.
+- name: CouchOS remote keys
+  ansible.builtin.copy:
+    src: keymaps/couchos.xml
+    dest: "{{ tv_home }}/.kodi/userdata/keymaps/couchos.xml"
+    owner: "{{ tv_user }}"
+    group: "{{ tv_user }}"
+    mode: "0644"
+  notify: Restart kodi
+
 # Superseded by PM4K's kiosk mode (below); two launchers raced each other.
 - name: Remove the old CouchOS autostart
   ansible.builtin.file:
@@ -206,6 +243,7 @@
       - --extra
       - service.couchos
       - screensaver.couchos.dashboard
+      - script.couchos.catalog
     enable_extra: "{{ ['inputstream.airplay'] if airplay_receiver == 'kodi' else [] }}"
   register: pm4k_enable
   changed_when: (pm4k_enable.stdout | from_json).changed

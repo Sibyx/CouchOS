@@ -68,8 +68,10 @@ mod skin_contract {
             .bytes("/1/large.jpg", b"JPEG");
         let ctx = ctx_at(fake, Date { year: 2026, month: 11, day: 22 });
         // Set by the screensaver itself, not by dashd: "offline" when dashd
-        // does not answer, "slide" for the carousel.
-        let mut served: BTreeSet<String> = ["offline".to_owned(), "slide".to_owned()].into();
+        // does not answer, "slide" for the carousel, "board.cards" for how
+        // many bottom-row slots the board's cards take.
+        let mut served: BTreeSet<String> =
+            ["offline".to_owned(), "slide".to_owned(), "board.cards".to_owned()].into();
         let widgets = [
             ("clock", "clock", json!(null)),
             ("weather", "weather", json!({"place": "Here", "latitude": 1, "longitude": 2, "hours_step": 1, "hours_count": 6})),

@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- CouchOS catalog: one library as a poster grid.
+
+     y  40 LIBRARY, title, count       buttons: Sort, Unwatched, Jump to letter
+       160 grid: 8 columns of 196 x 294 posters (couchd's 320 x 480 file),
+           title and year under each; app.py loads more as you near the end.
+
+     Channel up/down page through the grid (Kodi's own page up/down).
+     A big letter shows for a moment after a jump. -->
+<window>
+    <defaultcontrol>500</defaultcontrol>
+    <animation effect="fade" time="200">WindowOpen</animation>
+    <animation effect="fade" time="150">WindowClose</animation>
+    <controls>
+        <control type="image">
+            <left>0</left><top>0</top><width>1920</width><height>1080</height>
+            <texture colordiffuse="FF000000">white.png</texture>
+        </control>
+
+        <control type="label">
+            <left>72</left><top>40</top><width>900</width><height>30</height>
+            <font>font12</font><textcolor>FFFFD23F</textcolor>
+            <label>LIBRARY$INFO[Window.Property(count),  ·  ,  TITLES]</label>
+        </control>
+        <control type="label">
+            <left>72</left><top>72</top><width>900</width><height>60</height>
+            <font>font37</font><textcolor>FFF2F2F2</textcolor>
+            <label>[B]$INFO[Window.Property(title)][/B]</label>
+        </control>
+
+        <control type="list" id="510">
+            <left>988</left><top>56</top><width>860</width><height>72</height>
+            <ondown>500</ondown>
+            <onup>510</onup>
+            <orientation>horizontal</orientation>
+            <scrolltime>0</scrolltime>
+            <itemlayout width="288" height="72">
+                <control type="image"><left>0</left><top>4</top><width>276</width><height>64</height><texture border="24" colordiffuse="1FFFFFFF">card.png</texture></control>
+                <control type="label"><left>0</left><top>4</top><width>276</width><height>64</height><align>center</align><aligny>center</aligny><font>font12</font><textcolor>FFB8B8B8</textcolor><label>$INFO[ListItem.Property(label)]</label></control>
+            </itemlayout>
+            <focusedlayout width="288" height="72">
+                <control type="image"><left>0</left><top>4</top><width>276</width><height>64</height><texture border="24" colordiffuse="1FFFFFFF">card.png</texture></control>
+                <control type="image"><left>0</left><top>4</top><width>276</width><height>64</height><texture border="24" colordiffuse="FFFFD23F">card.png</texture><visible>Control.HasFocus(510)</visible></control>
+                <control type="label"><left>0</left><top>4</top><width>276</width><height>64</height><align>center</align><aligny>center</aligny><font>font12</font><textcolor>FF1D1D1D</textcolor><label>[B]$INFO[ListItem.Property(label)][/B]</label><visible>Control.HasFocus(510)</visible></control>
+                <control type="label"><left>0</left><top>4</top><width>276</width><height>64</height><align>center</align><aligny>center</aligny><font>font12</font><textcolor>FFB8B8B8</textcolor><label>$INFO[ListItem.Property(label)]</label><visible>!Control.HasFocus(510)</visible></control>
+            </focusedlayout>
+        </control>
+
+        <control type="panel" id="500">
+            <left>72</left><top>160</top><width>1800</width><height>870</height>
+            <onup>510</onup>
+            <orientation>vertical</orientation>
+            <scrolltime tween="quadratic">180</scrolltime>
+            <itemlayout width="222" height="400">
+                <control type="image"><left>0</left><top>0</top><width>196</width><height>294</height><aspectratio>scale</aspectratio><texture background="true" colordiffuse="FFB8B8B8">$INFO[ListItem.Art(poster)]</texture></control>
+                <control type="image"><left>170</left><top>8</top><width>16</width><height>16</height><texture colordiffuse="FFFFD23F">dot.png</texture><visible>String.IsEqual(ListItem.Property(unwatched),1)</visible></control>
+                <control type="progress"><left>0</left><top>288</top><width>196</width><height>6</height><info>ListItem.PercentPlayed</info><texturebg colordiffuse="66000000">white.png</texturebg><midtexture colordiffuse="FFFFD23F">white.png</midtexture><visible>Integer.IsGreater(ListItem.PercentPlayed,0)</visible></control>
+                <control type="label"><left>0</left><top>304</top><width>196</width><height>32</height><font>font12</font><textcolor>FFB8B8B8</textcolor><label>$INFO[ListItem.Property(label)]</label></control>
+                <control type="label"><left>0</left><top>336</top><width>196</width><height>28</height><font>font10</font><textcolor>FF5A5A5A</textcolor><label>$INFO[ListItem.Property(label2)]</label></control>
+            </itemlayout>
+            <focusedlayout width="222" height="400">
+                <control type="image"><left>-6</left><top>-6</top><width>208</width><height>306</height><texture border="24" colordiffuse="FFFFD23F">card.png</texture><visible>Control.HasFocus(500)</visible></control>
+                <control type="image"><left>0</left><top>0</top><width>196</width><height>294</height><aspectratio>scale</aspectratio><texture background="true">$INFO[ListItem.Art(poster)]</texture></control>
+                <control type="image"><left>170</left><top>8</top><width>16</width><height>16</height><texture colordiffuse="FFFFD23F">dot.png</texture><visible>String.IsEqual(ListItem.Property(unwatched),1)</visible></control>
+                <control type="progress"><left>0</left><top>288</top><width>196</width><height>6</height><info>ListItem.PercentPlayed</info><texturebg colordiffuse="66000000">white.png</texturebg><midtexture colordiffuse="FFFFD23F">white.png</midtexture><visible>Integer.IsGreater(ListItem.PercentPlayed,0)</visible></control>
+                <control type="label"><left>0</left><top>304</top><width>196</width><height>32</height><font>font12</font><textcolor>FFF2F2F2</textcolor><label>[B]$INFO[ListItem.Property(label)][/B]</label></control>
+                <control type="label"><left>0</left><top>336</top><width>196</width><height>28</height><font>font10</font><textcolor>FF8A8A8A</textcolor><label>$INFO[ListItem.Property(label2)]</label></control>
+            </focusedlayout>
+        </control>
+
+        <control type="label">
+            <left>72</left><top>200</top><width>1776</width><height>56</height>
+            <font>font37</font><textcolor>FF5A5A5A</textcolor>
+            <label>$INFO[Window.Property(empty)]</label>
+            <visible>!String.IsEmpty(Window.Property(empty))</visible>
+        </control>
+
+        <!-- the letter just jumped to -->
+        <control type="group">
+            <left>810</left><top>390</top>
+            <visible>!String.IsEmpty(Window.Property(jump))</visible>
+            <animation effect="fade" time="150">VisibleChange</animation>
+            <control type="image"><left>0</left><top>0</top><width>300</width><height>300</height><texture border="24" colordiffuse="E61D1D1D">card.png</texture></control>
+            <control type="label"><left>0</left><top>0</top><width>300</width><height>300</height><align>center</align><aligny>center</aligny><font>WeatherTemp</font><textcolor>FFFFD23F</textcolor><label>$INFO[Window.Property(jump)]</label></control>
+        </control>
+
+        <control type="label">
+            <left>72</left><top>1036</top><width>1776</width><height>30</height>
+            <font>font10</font><textcolor>FF5A5A5A</textcolor>
+            <label>[COLOR FFE5534B]RED[/COLOR] jump to letter     [COLOR FF8FBF7A]GREEN[/COLOR] sort ($INFO[Window.Property(sort)])     [COLOR FFFFD23F]YELLOW[/COLOR] unwatched only     [COLOR FFB8B8B8]2–9[/COLOR] letter, like a phone     [COLOR FFB8B8B8]CH +/-[/COLOR] page     [COLOR FF7FB2E5]BLUE[/COLOR] search</label>
+        </control>
+    </controls>
+</window>

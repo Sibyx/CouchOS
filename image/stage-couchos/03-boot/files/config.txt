@@ -8,6 +8,12 @@ auto_initramfs=1
 disable_splash=1
 boot_delay=0
 
+# 3.5 mm jack off: audio goes to HDMI (vc4-hdmi) or Bluetooth.
+# It must stay above the dtoverlay line: a dtparam after a dtoverlay sets that
+# overlay's parameter, and vc4-kms-v3d's own "audio=off" removes HDMI audio
+# ("vc4_hdmi: 'dmas' DT property is missing or empty, no HDMI audio").
+dtparam=audio=off
+
 # KMS display driver (Kodi GBM and UxPlay kmssink both render through it).
 # 256 MB CMA covers the Kodi GUI buffers plus V4L2 decode and scaler buffers.
 dtoverlay=vc4-kms-v3d,cma-256
@@ -20,8 +26,6 @@ disable_overscan=1
 gpu_mem=128
 
 # Hardware CouchOS does not use.
-# 3.5 mm jack off: audio goes to HDMI (vc4-hdmi) or Bluetooth.
-dtparam=audio=off
 # Wired network only. Bluetooth (same chip, UART) stays on for speakers.
 dtoverlay=disable-wifi
 camera_auto_detect=0

@@ -1,15 +1,23 @@
 #!/usr/bin/env python3
 """couchd - CouchOS control daemon.
 
-Runs as a systemd --user service of the media user, next to Kodi and UxPlay.
+Runs as a systemd --user service of the media user, next to Kodi.
 
-* AirPlay inside Kodi: Kodi (and Plex in it) never stops. UxPlay only
-  receives and forwards RTP; airplay-bridge muxes it into MPEG-TS on
-  udp://127.0.0.1:5010. UxPlay writes its -dacp file only while a client is
-  connected: couchd then makes Kodi play the stream (hardware decode) and
-  wakes the TV, and stops it when the client leaves, so Plex is back at once.
+* AirPlay inside Kodi: Kodi (and Plex in it) never stops. Two receivers
+  (COUCHD_AIRPLAY_RECEIVER):
+  - kodi: inputstream.airplay plays the stream in Kodi by itself. couchd
+    reports the session (a sender connected on the AirPlay port, and what
+    Kodi plays), wakes the TV when one starts, and ends it on request.
+  - uxplay: UxPlay only receives and forwards RTP; airplay-bridge muxes it
+    into MPEG-TS on tcp://127.0.0.1:5010. UxPlay writes its -dacp file only
+    while a client is connected: couchd then makes Kodi play the stream and
+    wakes the TV, and stops it when the client leaves.
 * HDMI-CEC: through Kodi while it runs (it owns /dev/cec0), else cec-ctl.
 * Bluetooth speakers (bluetoothctl) and volume (wpctl).
+* Plex catalog for the phone (plexcatalog.py: an index of the libraries on the
+  Pi, kept current in the background, and an artwork cache), browsed with
+  PM4K's own sign-in (the token stays here); "play this on the TV" is handed
+  to PM4K over JSONRPC.NotifyAll.
 * JSON API on the LAN (trusted network, no auth) for the web UI and future
   phone apps.
 
@@ -18,19 +26,27 @@ Standard library only.
 
 from __future__ import annotations
 
+import collections
 import json
 import logging
 import os
+import queue
 import re
+import signal
 import subprocess
+import sys
 import threading
 import time
+import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-VERSION = "0.2.0"
+from plexcatalog import Catalog, PlexClient, PlexError
+
+VERSION = "0.3.0"
 
 BIND = os.environ.get("COUCHD_BIND", "0.0.0.0")
 PORT = int(os.environ.get("COUCHD_PORT", "8765"))
@@ -42,7 +58,18 @@ OSD_NAME = os.environ.get("COUCHD_OSD_NAME", "CouchOS")
 RESTORE_DELAY = float(os.environ.get("COUCHD_RESTORE_DELAY", "2"))
 # What Kodi plays during AirPlay (airplay-bridge output). The ".ts" suffix makes
 # Kodi use its video player; udp:// gets Kodi's low-latency realtime handling.
-AIRPLAY_URL = os.environ.get("COUCHD_AIRPLAY_URL", "udp://127.0.0.1:5010/airplay.ts")
+AIRPLAY_URL = os.environ.get("COUCHD_AIRPLAY_URL", "tcp://127.0.0.1:5010/airplay.ts")
+# Kodi's window id for full-screen video, and how long to keep pushing it to the
+# front after an AirPlay client connects (Kodi's stream probe takes a while).
+FULLSCREEN_VIDEO = 12005
+FRONT_TIMEOUT = float(os.environ.get("COUCHD_FRONT_TIMEOUT", "30"))
+# Which AirPlay receiver runs: "kodi" (inputstream.airplay) or "uxplay".
+AIRPLAY_RECEIVER = os.environ.get("COUCHD_AIRPLAY_RECEIVER", "kodi")
+# The AirPlay control port: a sender holds a connection to it for the session.
+AIRPLAY_PORT = int(os.environ.get("COUCHD_AIRPLAY_PORT", "7000"))
+# inputstream.airplay's daemon (it restarts it by itself when it exits).
+AIRPLAY_DAEMON = b"/airplay-receiver"
+PM4K_ID = "script.plexmod"
 
 MAC_RE = re.compile(r"^[0-9A-F]{2}(:[0-9A-F]{2}){5}$")
 KODI_INPUTS = {
@@ -68,6 +95,14 @@ class ApiError(Exception):
     def __init__(self, status: HTTPStatus, message: str):
         super().__init__(message)
         self.status = status
+
+
+class Raw:
+    """A non-JSON response body (artwork)."""
+
+    def __init__(self, data: bytes, content_type: str):
+        self.data = data
+        self.content_type = content_type
 
 
 # --- helpers -------------------------------------------------------------------
@@ -145,18 +180,76 @@ class Cec:
 # --- AirPlay -------------------------------------------------------------------
 
 
+_LOOPBACK = {"0100007F", "00000000000000000000000001000000", "0000000000000000FFFF00000100007F"}
+
+
+def airplay_senders(port: int = AIRPLAY_PORT) -> list[str]:
+    """Remote ends of established TCP connections to the AirPlay port (hex
+    addresses from /proc/net/tcp*). A sender keeps one open for its session."""
+    peers = []
+    for table in ("/proc/net/tcp", "/proc/net/tcp6"):
+        try:
+            lines = Path(table).read_text().splitlines()[1:]
+        except OSError:
+            continue
+        for line in lines:
+            fields = line.split()
+            if len(fields) < 4 or fields[3] != "01":  # 01 = ESTABLISHED
+                continue
+            local, remote = fields[1], fields[2]
+            if int(local.rsplit(":", 1)[1], 16) != port:
+                continue
+            address = remote.rsplit(":", 1)[0]
+            if address not in _LOOPBACK:
+                peers.append(address)
+    return peers
+
+
+def airplay_daemon_pids() -> list[int]:
+    pids = []
+    for proc in Path("/proc").iterdir():
+        if not proc.name.isdigit():
+            continue
+        try:
+            argv0 = (proc / "cmdline").read_bytes().split(b"\0", 1)[0]
+        except OSError:
+            continue
+        if argv0.endswith(AIRPLAY_DAEMON):
+            pids.append(int(proc.name))
+    return pids
+
+
+def _is_plex_url(path: str) -> bool:
+    return any(mark in path for mark in ("X-Plex-Token", "/library/parts/", "/video/:/transcode", "plex.direct"))
+
+
 class AirPlay:
-    """Plays the AirPlay stream in Kodi while an iPhone/Mac is connected.
+    """An iPhone/Mac showing something on the TV, inside Kodi.
 
     There are no modes: Plex is always the TV's home, AirPlay is a temporary
-    full-screen video on top of it.
+    full-screen video (or music) on top of it.
+
+    receiver "kodi" (inputstream.airplay): the add-on opens and stops the
+    stream itself. Mirroring and music play as airplay://...; video from an
+    app plays the playlist the sender hands over (an ordinary http URL), so
+    that counts as AirPlay while a sender is connected and it isn't Plex's.
+    Ending a session: stop the player and end the add-on's daemon, which
+    drops the sender's connection; the add-on starts a fresh daemon at once.
+
+    receiver "uxplay": couchd opens the bridge's stream while UxPlay's -dacp
+    file exists, and ends a session by restarting UxPlay.
     """
 
-    def __init__(self, cec: Cec):
+    def __init__(self, cec: Cec, receiver: str = AIRPLAY_RECEIVER):
         self.cec = cec
+        self.receiver = receiver
         self.lock = threading.Lock()
+        self.on_change: Callable[[], None] = lambda: None
+        self.on_restart: Callable[[str, str], None] = lambda unit, reason: None
         self.active = False
         self.since: float | None = None
+        self.kind: str | None = None  # screen, video, audio
+        self.sender: str | None = None
         self._gone_since: float | None = None
         self._saved_refresh: int | None = None
 
@@ -166,19 +259,124 @@ class AirPlay:
     def _watch(self) -> None:
         while True:
             try:
-                self._tick()
+                self._tick() if self.receiver == "uxplay" else self._tick_kodi()
             except Exception:  # keep watching whatever happens
                 log.exception("airplay tick failed")
-            time.sleep(0.25)
+            time.sleep(0.25 if self.receiver == "uxplay" else 1.0)
+
+    @property
+    def running(self) -> bool:
+        if self.receiver == "uxplay":
+            return unit_active("uxplay.service")
+        return bool(airplay_daemon_pids())
+
+    def status(self) -> dict:
+        return {"receiver": self.receiver, "running": self.running, "active": self.active,
+                "since": self.since, "kind": self.kind}
+
+    # -- receiver "kodi"
+
+    def _now_showing(self) -> tuple[str | None, int | None]:
+        """(kind, player id) of the AirPlay item Kodi plays, if any."""
+        senders = airplay_senders()
+        for player in kodi_rpc("Player.GetActivePlayers", timeout=2) or []:
+            item = kodi_rpc("Player.GetItem", {"playerid": player["playerid"], "properties": ["file"]}, timeout=2)
+            path = (item or {}).get("item", {}).get("file", "")
+            audio = player.get("type") == "audio"
+            if path.startswith("airplay://"):
+                return ("audio" if audio else "screen"), player["playerid"]
+            if path.startswith(AIRPLAY_URL.split("/airplay")[0]):
+                return "screen", player["playerid"]
+            if senders and path.startswith("http") and not _is_plex_url(path):
+                return ("audio" if audio else "video"), player["playerid"]
+        return None, None
+
+    def on_screen(self) -> bool:
+        """Checked now, not from the last tick: the Play button asks."""
+        if self.receiver == "uxplay":
+            return self.active
+        return self._now_showing()[0] is not None
+
+    def _tick_kodi(self) -> None:
+        senders = airplay_senders()
+        # Kodi is only asked while a sender is connected: idle costs nothing.
+        kind = self._now_showing()[0] if senders else None
+        with self.lock:
+            if kind and not self.active:
+                self.active, self.kind, self.since = True, kind, time.time()
+                self.sender = senders[0] if senders else None
+                self._gone_since = None
+                log.info("AirPlay session started (%s)", kind)
+                self.on_change()
+                try:
+                    self.cec.tv("on")
+                except (OSError, ApiError, subprocess.TimeoutExpired) as exc:
+                    log.warning("CEC wake failed: %s", exc)
+            elif kind and kind != self.kind:
+                self.kind = kind
+                self._gone_since = None
+                self.on_change()
+            elif kind:
+                self._gone_since = None
+            elif self.active:
+                now = time.monotonic()
+                if self._gone_since is None:
+                    self._gone_since = now
+                elif now - self._gone_since >= RESTORE_DELAY:
+                    log.info("AirPlay session ended")
+                    self.active, self.kind, self.since, self.sender = False, None, None, None
+                    self._gone_since = None
+                    self.on_change()
+
+    def _disconnect_kodi(self) -> None:
+        pids = airplay_daemon_pids()
+        if not pids:
+            raise ApiError(HTTPStatus.CONFLICT, "the AirPlay receiver is not running (is inputstream.airplay enabled?)")
+        # What plays now, while the sender is still connected (afterwards an
+        # app's video no longer looks like AirPlay).
+        try:
+            kind, player = self._now_showing()
+        except (OSError, ApiError):
+            kind, player = None, None
+        # The daemon first: that drops the sender and ends mirroring and music.
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+        log.info("AirPlay: ended the session (receiver %s restarts)", pids)
+        # Video from an app plays the sender's playlist, which outlives the
+        # daemon: stop it too. Not while a modal dialog is up -- the add-on
+        # documents a deadlock for a stop landing then (inputstream.adaptive's
+        # DRM failure dialog); it holds its own stops back for the same reason.
+        if player is not None:
+            try:
+                time.sleep(1)
+                still = any(p["playerid"] == player for p in kodi_rpc("Player.GetActivePlayers", timeout=2) or [])
+                modal = kodi_rpc("XBMC.GetInfoBooleans", {"booleans": ["System.HasActiveModalDialog"]}, timeout=2) or {}
+                if still and not modal.get("System.HasActiveModalDialog"):
+                    kodi_rpc("Player.Stop", {"playerid": player})
+                elif still:
+                    log.warning("AirPlay %s still playing behind a dialog; not stopping it", kind)
+            except (OSError, ApiError) as exc:
+                log.warning("could not stop the AirPlay item: %s", exc)
+        with self.lock:
+            self.active, self.kind, self.since, self.sender = False, None, None, None
+            self._gone_since = None
+        self.on_change()
+
+    # -- receiver "uxplay"
 
     def _tick(self) -> None:
         connected = DACP_FILE.exists()
         with self.lock:
             if connected and not self.active:
                 self.active = True
+                self.kind = "screen"
                 self.since = time.time()
                 self._gone_since = None
                 log.info("AirPlay client connected")
+                self.on_change()  # tell clients at once, before Kodi work
                 self._begin()
             elif not connected and self.active:
                 now = time.monotonic()
@@ -203,15 +401,38 @@ class AirPlay:
             kodi_rpc("Player.Open", {"item": {"file": AIRPLAY_URL}})
         except (OSError, ApiError) as exc:
             log.error("could not open AirPlay stream in Kodi: %s", exc)
+        threading.Thread(target=self._bring_video_to_front, name="airplay-front", daemon=True).start()
         try:
             self.cec.tv("on")
         except (OSError, ApiError, subprocess.TimeoutExpired) as exc:
             log.warning("CEC wake failed: %s", exc)
 
+    def _bring_video_to_front(self) -> None:
+        """Keep the AirPlay video on screen while Kodi opens it.
+
+        Player.Open does not switch to the video while a modal dialog is up
+        (PM4K's busy spinner after a restart, or its exit prompt): the stream
+        plays underneath and the TV shows Plex.
+        """
+        deadline = time.monotonic() + FRONT_TIMEOUT
+        while self.active and time.monotonic() < deadline:
+            try:
+                window = kodi_rpc("GUI.GetProperties", {"properties": ["currentwindow"]}, timeout=2)
+                if window["currentwindow"]["id"] == FULLSCREEN_VIDEO and self._playing_airplay():
+                    return
+                kodi_rpc("Addons.ExecuteAddon", {"addonid": "service.couchos", "params": ["show_video"]}, timeout=3)
+            except (OSError, ApiError, KeyError, TypeError) as exc:
+                log.debug("bring video to front: %s", exc)
+            time.sleep(1)
+        if self.active:
+            log.warning("AirPlay video did not come to the front within %.0f s", FRONT_TIMEOUT)
+
     def _end(self) -> None:
         self.active = False
+        self.kind = None
         self.since = None
         self._gone_since = None
+        self.on_change()
         try:
             if self._playing_airplay():
                 kodi_rpc("Player.Stop", {"playerid": 1})
@@ -227,7 +448,12 @@ class AirPlay:
         return (item or {}).get("item", {}).get("file", "").startswith(AIRPLAY_URL.split("/airplay")[0])
 
     def disconnect(self) -> None:
-        """Kick the connected device: restarting UxPlay drops the session."""
+        """End the session: the phone stops sharing and Plex is back."""
+        if self.receiver != "uxplay":
+            self._disconnect_kodi()
+            return
+        # Restarting UxPlay drops the session.
+        self.on_restart("uxplay.service", "AirPlay stopped from the web page or app")
         unit_action("restart", "uxplay.service")
         with self.lock:
             if self.active:
@@ -341,6 +567,463 @@ def system_status() -> dict:
     }
 
 
+def save_json(path: Path, data: object) -> None:
+    """Write atomically, so a power cut never leaves half a file."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, separators=(",", ":")))
+        tmp.replace(path)
+    except OSError as exc:
+        log.warning("could not save %s: %s", path, exc)
+
+
+def load_json(path: Path) -> object:
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def find_hwmon(name: str) -> Path | None:
+    for d in Path("/sys/class/hwmon").glob("hwmon*"):
+        if read_first_line(str(d / "name")) == name:
+            return d
+    return None
+
+
+# Interfaces that are not the box's own link to the LAN.
+VIRTUAL_NET = re.compile(r"^(lo|veth|docker|podman|cni|br-|virbr|tap)")
+
+# Per-minute power flags.
+UNDER_VOLTAGE = 1
+THROTTLED = 2
+
+
+class Metrics:
+    """24 h of CPU, memory, temperature, disk, network and power, per minute.
+
+    Kept in memory and written to disk every few minutes (and on stop), so a
+    couchd restart keeps the history without wearing the SD card. statvfs
+    reads the in-memory superblock: it never spins the media HDD back up.
+
+    Under-voltage dips are often shorter than a minute, so the rpi_volt alarm
+    (a sysfs file, no subprocess) is polled every POLL seconds in between.
+    """
+
+    INTERVAL = 60
+    POLL = 2
+    KEEP = 24 * 3600
+    SAVE_EVERY = 900
+    # [t, cpu %, mem MB, temp °C, {mount: [used GB, total GB]}, rx Mbit/s, tx Mbit/s, power flags]
+    FIELDS = 8
+
+    def __init__(self, path: Path, disks: list[tuple[str, str]]):
+        self.path = path
+        self.disks = disks  # (mount point, label)
+        self.lock = threading.Lock()
+        self.samples: collections.deque = collections.deque(maxlen=self.KEEP // self.INTERVAL + 5)
+        self._cpu_prev = self._cpu_times()
+        self._net_prev = (time.monotonic(), self._net_bytes())
+        volt = find_hwmon("rpi_volt")
+        self._volt_alarm = volt / "in0_lcrit_alarm" if volt else None
+        self._uv_seen = False
+        self._dirty = False
+        self.mem_total_mb: int | None = None
+
+    @staticmethod
+    def _net_bytes() -> tuple[int, int]:
+        rx = tx = 0
+        for line in Path("/proc/net/dev").read_text().splitlines()[2:]:
+            name, _, data = line.partition(":")
+            if VIRTUAL_NET.match(name.strip()):
+                continue
+            fields = data.split()
+            rx += int(fields[0])
+            tx += int(fields[8])
+        return rx, tx
+
+    def _net_rates(self) -> tuple[float | None, float | None]:
+        now, (rx, tx) = time.monotonic(), self._net_bytes()
+        (then, (rx0, tx0)), self._net_prev = self._net_prev, (now, (rx, tx))
+        dt = now - then
+        if dt <= 0 or rx < rx0 or tx < tx0:  # counters reset (interface went down)
+            return None, None
+        return round((rx - rx0) * 8 / dt / 1e6, 3), round((tx - tx0) * 8 / dt / 1e6, 3)
+
+    def poll_power(self) -> None:
+        if self._volt_alarm and read_first_line(str(self._volt_alarm)) == "1":
+            self._uv_seen = True
+
+    @staticmethod
+    def _cpu_times() -> tuple[int, int]:
+        fields = [int(v) for v in Path("/proc/stat").read_text().split("\n", 1)[0].split()[1:]]
+        idle = fields[3] + (fields[4] if len(fields) > 4 else 0)  # idle + iowait
+        return idle, sum(fields[:8])  # guest time is already in user/nice
+
+    def _disk_use(self) -> dict[str, list[float]]:
+        use = {}
+        for mount, _label in self.disks:
+            if not os.path.ismount(mount):
+                continue
+            st = os.statvfs(mount)
+            total = st.f_blocks * st.f_frsize
+            used = total - st.f_bfree * st.f_frsize
+            use[mount] = [round(used / 1e9, 2), round(total / 1e9, 2)]
+        return use
+
+    def sample(self) -> None:
+        idle, total = self._cpu_times()
+        d_idle, d_total = idle - self._cpu_prev[0], total - self._cpu_prev[1]
+        self._cpu_prev = (idle, total)
+        cpu = round(100 * (1 - d_idle / d_total), 1) if d_total > 0 else None
+        rx, tx = self._net_rates()
+        mem = system_status()
+        temp = mem["temp_c"]
+        used_mb = mem["mem_total_mb"] - mem["mem_available_mb"]
+        # vcgencmd get_throttled: bit 0 under-voltage, 1 frequency capped,
+        # 2 throttled, 3 soft temperature limit (all "right now").
+        self.poll_power()
+        try:
+            bits = int(mem["throttled"] or "0", 16)
+        except ValueError:
+            bits = 0
+        power = (UNDER_VOLTAGE if self._uv_seen or bits & 0x1 else 0) | (THROTTLED if bits & 0xE else 0)
+        self._uv_seen = False
+        with self.lock:
+            self.mem_total_mb = mem["mem_total_mb"]
+            self.samples.append([int(time.time()), cpu, used_mb, temp, self._disk_use(), rx, tx, power])
+            self._dirty = True
+
+    def snapshot(self) -> dict:
+        cutoff = time.time() - self.KEEP
+        with self.lock:
+            rows = [r for r in self.samples if r[0] >= cutoff]
+        last = rows[-1][4] if rows else {}
+        return {
+            "interval": self.INTERVAL,
+            "now": int(time.time()),
+            "mem_total_mb": self.mem_total_mb,
+            "t": [r[0] for r in rows],
+            "cpu": [r[1] for r in rows],
+            "mem_mb": [r[2] for r in rows],
+            "temp_c": [r[3] for r in rows],
+            "net_rx_mbps": [r[5] for r in rows],
+            "net_tx_mbps": [r[6] for r in rows],
+            "power": [r[7] for r in rows],
+            "power_monitor": self._volt_alarm is not None,
+            "disks": [
+                {
+                    "path": mount,
+                    "label": label,
+                    "used_gb": last[mount][0] if mount in last else None,
+                    "total_gb": last[mount][1] if mount in last else None,
+                    "used_gb_series": [r[4][mount][0] if mount in r[4] else None for r in rows],
+                }
+                for mount, label in self.disks
+                if any(mount in r[4] for r in rows)
+            ],
+        }
+
+    def load(self) -> None:
+        rows = load_json(self.path)
+        if not isinstance(rows, list):
+            return
+        cutoff = time.time() - self.KEEP
+        with self.lock:
+            for r in rows:
+                if isinstance(r, list) and len(r) >= 5 and r[0] >= cutoff:
+                    self.samples.append(r + [None] * (self.FIELDS - len(r)))  # older, shorter rows
+
+    def save(self) -> None:
+        with self.lock:
+            if not self._dirty:
+                return
+            data = list(self.samples)
+            self._dirty = False
+        save_json(self.path, data)
+
+    def start(self, every_minute: Callable[[], None] = lambda: None) -> None:
+        self.load()
+        threading.Thread(target=self._watch, args=(every_minute,), name="metrics", daemon=True).start()
+
+    def _watch(self, every_minute: Callable[[], None]) -> None:
+        last_save = next_sample = time.monotonic()
+        next_sample += self.INTERVAL
+        while True:
+            time.sleep(self.POLL)
+            try:
+                self.poll_power()
+                if time.monotonic() < next_sample:
+                    continue
+                next_sample = max(next_sample + self.INTERVAL, time.monotonic() + self.POLL)
+                self.sample()
+                every_minute()
+                if time.monotonic() - last_save >= self.SAVE_EVERY:
+                    self.save()
+                    last_save = time.monotonic()
+            except Exception:
+                log.exception("metrics sample failed")
+
+
+def metrics_disks() -> list[tuple[str, str]]:
+    """COUCHD_DISKS="/=System,/srv/media=Media": mount points to chart."""
+    spec = os.environ.get("COUCHD_DISKS", "/=System,/srv/media=Media")
+    disks = []
+    for item in spec.split(","):
+        mount, _, label = item.strip().partition("=")
+        if mount:
+            disks.append((mount, label or mount))
+    return disks
+
+
+class Services:
+    """State of the services CouchOS is made of, and 24 h of their restarts.
+
+    systemd only knows the current run, so couchd compares each unit's start
+    time once a minute and logs what changed. The last seen start times are
+    saved with the log, so a couchd restart (or a reboot) doesn't lose them.
+    """
+
+    # (scope, unit, label). Units that aren't installed are left out.
+    UNITS = [
+        ("user", "kodi.service", "Kodi"),
+        ("user", "uxplay.service", "AirPlay receiver"),
+        ("user", "airplay-bridge.service", "AirPlay bridge"),
+        ("user", "couchd.service", "Control daemon"),
+        ("user", "couch-web.service", "Web page"),
+        ("user", "wireplumber.service", "Audio"),
+        ("system", "bluetooth.service", "Bluetooth"),
+        ("system", "avahi-daemon.service", "Bonjour"),
+    ]
+    PROPS = "Id,LoadState,ActiveState,SubState,NRestarts,Result,ActiveEnterTimestampMonotonic"
+    KEEP = 24 * 3600
+    SETTLE = 180  # starts this soon after boot are part of the boot
+
+    def __init__(self, path: Path):
+        self.path = path
+        self.lock = threading.Lock()
+        self.events: list[dict] = []
+        self._seen: dict[str, dict] = {}  # unit -> {"start": wall time, "restarts": n}
+        self._boot: float | None = None
+        self._reasons: dict[str, tuple[float, str]] = {}
+        self._cache: tuple[float, list[dict]] | None = None
+        self._dirty = False
+
+    @staticmethod
+    def boot_time() -> float:
+        return time.time() - float(Path("/proc/uptime").read_text().split()[0])
+
+    def _show(self, scope: str, units: list[str]) -> list[dict]:
+        argv = ["systemctl", "show", "-p", self.PROPS, *units]
+        if scope == "user":
+            argv.insert(1, "--user")
+        out = run(*argv).stdout
+        rows = []
+        for block in out.strip().split("\n\n"):
+            props = dict(line.split("=", 1) for line in block.splitlines() if "=" in line)
+            if props:
+                rows.append(props)
+        return rows
+
+    def query(self) -> list[dict]:
+        """Current state of every installed unit (cached for a few seconds)."""
+        with self.lock:
+            if self._cache and time.monotonic() - self._cache[0] < 3:
+                return self._cache[1]
+        labels = {unit: (scope, label) for scope, unit, label in self.UNITS}
+        now_wall, now_mono = time.time(), time.monotonic()
+        result = []
+        for scope in ("user", "system"):
+            units = [u for s, u, _ in self.UNITS if s == scope]
+            for p in self._show(scope, units):
+                if p.get("LoadState") != "loaded" or p.get("Id") not in labels:
+                    continue
+                started_us = int(p.get("ActiveEnterTimestampMonotonic") or 0)
+                result.append({
+                    "unit": p["Id"],
+                    "label": labels[p["Id"]][1],
+                    "scope": scope,
+                    "active": p.get("ActiveState"),
+                    "sub": p.get("SubState"),
+                    "result": p.get("Result"),
+                    "restarts": int(p.get("NRestarts") or 0),
+                    "since": round(now_wall - (now_mono - started_us / 1e6)) if started_us else None,
+                })
+        order = [u for _, u, _ in self.UNITS]
+        result.sort(key=lambda r: order.index(r["unit"]))
+        with self.lock:
+            self._cache = (time.monotonic(), result)
+        return result
+
+    def expect(self, unit: str, reason: str) -> None:
+        """couchd is about to restart a unit: say why in the log."""
+        with self.lock:
+            self._reasons[unit] = (time.time(), reason)
+
+    def _event(self, t: float, kind: str, unit: str | None, label: str, detail: str = "") -> None:
+        self.events.append({"t": round(t), "kind": kind, "unit": unit, "label": label, "detail": detail})
+        self._dirty = True
+
+    def check(self) -> None:
+        """Compare with the last check and log restarts, crashes and boots."""
+        units = self.query()
+        boot = self.boot_time()
+        with self.lock:
+            if self._boot is not None and abs(boot - self._boot) > 60:
+                self._event(boot, "boot", None, "Box started")
+            self._boot = boot
+            for u in units:
+                prev = self._seen.get(u["unit"])
+                state = {"start": u["since"], "restarts": u["restarts"], "active": u["active"]}
+                self._seen[u["unit"]] = state
+                if prev is None:
+                    self._dirty = True
+                    continue
+                if u["active"] == "failed" and prev.get("active") != "failed":
+                    self._event(time.time(), "failed", u["unit"], u["label"], u["result"] or "")
+                if not u["since"] or u["since"] == prev.get("start") or u["since"] - boot < self.SETTLE:
+                    continue
+                if u["restarts"] > prev.get("restarts", 0):  # NRestarts counts only Restart= restarts
+                    self._event(u["since"], "crash", u["unit"], u["label"], "crashed, systemd restarted it")
+                    continue
+                reason = self._reasons.pop(u["unit"], None)
+                detail = reason[1] if reason and abs(reason[0] - u["since"]) < 120 else ""
+                self._event(u["since"], "restart", u["unit"], u["label"], detail)
+            cutoff = time.time() - self.KEEP
+            self.events = sorted((e for e in self.events if e["t"] >= cutoff), key=lambda e: e["t"])
+
+    def snapshot(self) -> dict:
+        units = self.query()
+        with self.lock:
+            return {"units": units, "events": list(self.events)}
+
+    def load(self) -> None:
+        data = load_json(self.path)
+        if not isinstance(data, dict):
+            return
+        cutoff = time.time() - self.KEEP
+        with self.lock:
+            self.events = [e for e in data.get("events", []) if isinstance(e, dict) and e.get("t", 0) >= cutoff]
+            self._seen = data.get("seen") or {}
+            self._boot = data.get("boot")
+
+    def save(self) -> None:
+        with self.lock:
+            if not self._dirty:
+                return
+            data = {"events": self.events, "seen": self._seen, "boot": self._boot}
+            self._dirty = False
+        save_json(self.path, data)
+
+    def start(self) -> None:
+        self.load()
+        try:
+            self.check()  # logs a reboot or restarts that happened while couchd was down
+        except Exception:
+            log.exception("service check failed")
+
+
+# --- Plex on the TV ------------------------------------------------------------------
+# Browsing (the catalog index on the Pi, artwork) is plexcatalog.py.
+
+
+class PlexOnTV:
+    """Hand Plex items to PM4K, which plays them on the TV. Transcoding,
+    resume and watched state stay PM4K's."""
+
+    def __init__(self, airplay: AirPlay, catalog: Catalog | None):
+        self.airplay = airplay
+        self.catalog = catalog
+
+    def play(self, key: str, play: bool = True, from_start: bool = False, replace: bool = False) -> dict:
+        """Hand the item to PM4K on the TV (its home window opens it, see
+        ansible/roles/kodi/files/pm4k-patches).
+
+        Refuses while AirPlay is on screen unless `replace`: PM4K's playback
+        would stop the stream and inputstream.airplay then stops the sender.
+        If PM4K isn't running it is started first; that takes several seconds,
+        so the open is sent from a background thread and the reply says
+        `starting`.
+        """
+        if not key.isdigit():
+            raise ApiError(HTTPStatus.BAD_REQUEST, "key must be a number")
+        # Continue Watching changes as soon as it plays.
+        if self.catalog:
+            self.catalog.invalidate_hubs()
+        try:
+            if not replace and self.airplay.on_screen():
+                raise ApiError(HTTPStatus.CONFLICT, "The TV is showing AirPlay. Stop it first, then play again.")
+            if self._pm4k_running():
+                self._notify_open(key, play, from_start)
+                return {"ok": True, "starting": False}
+        except OSError as exc:
+            raise ApiError(HTTPStatus.SERVICE_UNAVAILABLE, f"Kodi is not reachable: {exc}") from exc
+        threading.Thread(target=self._start_then_open, args=(key, play, from_start), name="plex-open", daemon=True).start()
+        return {"ok": True, "starting": True}
+
+    def _start_then_open(self, key: str, play: bool, from_start: bool) -> None:
+        try:
+            log.info("Plex: starting PM4K before opening %s", key)
+            kodi_rpc("Addons.ExecuteAddon", {"addonid": PM4K_ID})
+            deadline = time.monotonic() + 30
+            while not self._pm4k_running():
+                if time.monotonic() > deadline:
+                    log.warning("Plex: PM4K did not start within 30 s; %s not opened", key)
+                    return
+                time.sleep(1)
+            # "running" is set before the home window exists and hooks the
+            # open signal; a notification before that is dropped by PM4K.
+            time.sleep(3)
+            self._notify_open(key, play, from_start)
+        except (OSError, ApiError) as exc:
+            log.warning("Plex: could not open %s: %s", key, exc)
+
+    @staticmethod
+    def _notify_open(key: str, play: bool, from_start: bool) -> None:
+        kodi_rpc("JSONRPC.NotifyAll", {
+            "sender": "couchos", "message": "open",
+            "data": {"key": key, "play": bool(play), "from_start": bool(from_start)},
+        })
+
+    @staticmethod
+    def _pm4k_running() -> bool:
+        label = "Window(10000).Property(script.plex.running)"
+        values = kodi_rpc("XBMC.GetInfoLabels", {"labels": [label]}, timeout=3) or {}
+        return bool(values.get(label))
+
+
+class Dashboard:
+    """The TV dashboard (dashd's data, drawn by screensaver.couchos.dashboard).
+
+    It is Kodi's screensaver, so Kodi shows it whenever the TV is idle, never
+    over a video, and the first key returns to Plex. On/off is which
+    screensaver Kodi uses; "show" also wakes the TV and starts it right away.
+    """
+
+    ADDON = "screensaver.couchos.dashboard"
+    OFF = "screensaver.xbmc.builtin.black"
+
+    def status(self) -> dict:
+        mode = kodi_rpc("Settings.GetSettingValue", {"setting": "screensaver.mode"}, timeout=3)["value"]
+        return {"enabled": mode == self.ADDON, "screensaver": mode}
+
+    def set(self, enabled: bool | None, show: bool) -> dict:
+        if show:
+            # Only video: audio (PM4K's theme music while browsing) may play on.
+            players = kodi_rpc("Player.GetActivePlayers", timeout=2) or []
+            if any(p.get("type") == "video" for p in players):
+                raise ApiError(HTTPStatus.CONFLICT, "A video is playing on the TV. Stop it first.")
+            enabled = True
+        if enabled is not None:
+            kodi_rpc("Settings.SetSettingValue", {"setting": "screensaver.mode", "value": self.ADDON if enabled else self.OFF})
+        if show:
+            # Wakes the TV over CEC, waits, then starts the screensaver (see
+            # service.couchos). Asynchronous: returns at once.
+            kodi_rpc("Addons.ExecuteAddon", {"addonid": "service.couchos", "params": ["dashboard"]})
+        return self.status()
+
+
 def now_playing() -> dict | None:
     try:
         players = kodi_rpc("Player.GetActivePlayers", timeout=2)
@@ -384,6 +1067,9 @@ class DisplayWatchdog:
 
     INTERVAL = 15
 
+    def __init__(self, services: Services):
+        self.services = services
+
     def start(self) -> None:
         threading.Thread(target=self._watch, name="display", daemon=True).start()
 
@@ -398,6 +1084,7 @@ class DisplayWatchdog:
                 misses = 0 if self.kodi_is_master() is not False else misses + 1
                 if misses >= 2:
                     log.warning("Kodi is running without the display; restarting it")
+                    self.services.expect("kodi.service", "display watchdog: Kodi had no picture")
                     unit_action("restart", "kodi.service")
                     misses = 0
             except Exception:
@@ -421,13 +1108,117 @@ def addresses() -> list[str]:
     return re.findall(r"inet (\d+\.\d+\.\d+\.\d+)/", out)
 
 
+class EventBus:
+    """Fan-out of status snapshots to Server-Sent Events subscribers."""
+
+    MAX_SUBSCRIBERS = 16
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._subscribers: set[queue.Queue] = set()
+
+    def subscribe(self) -> queue.Queue:
+        q: queue.Queue = queue.Queue(maxsize=8)
+        with self._lock:
+            if len(self._subscribers) >= self.MAX_SUBSCRIBERS:
+                raise ApiError(HTTPStatus.SERVICE_UNAVAILABLE, "too many event subscribers")
+            self._subscribers.add(q)
+        return q
+
+    def unsubscribe(self, q: queue.Queue) -> None:
+        with self._lock:
+            self._subscribers.discard(q)
+
+    @property
+    def count(self) -> int:
+        with self._lock:
+            return len(self._subscribers)
+
+    def publish(self, payload: dict) -> None:
+        with self._lock:
+            subscribers = list(self._subscribers)
+        for q in subscribers:
+            try:
+                q.put_nowait(payload)
+            except queue.Full:  # slow client: drop rather than block couchd
+                pass
+
+
 class App:
+    # Seconds between change checks while someone listens; heartbeat interval.
+    CHECK_INTERVAL = 3.0
+    HEARTBEAT = 15.0
+
     def __init__(self) -> None:
         self.cec = Cec()
         self.airplay = AirPlay(self.cec)
         self.bt = Bluetooth()
+        # The catalog must not take the rest down (CEC, AirPlay, Bluetooth):
+        # if its database can't open (no FTS5, disk full), only Plex browsing
+        # is off, and says why.
+        self.catalog: Catalog | None = None
+        self.catalog_error: str | None = None
+        try:
+            self.catalog = Catalog(PlexClient(), on_change=self.changed)
+        except Exception as exc:
+            log.exception("Plex catalog unavailable")
+            self.catalog_error = f"Plex catalog unavailable: {exc}"
+        self.plex = PlexOnTV(self.airplay, self.catalog)
+        self.dashboard = Dashboard()
+        self.events = EventBus()
+        state = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state")
+        self.metrics = Metrics(state / "couchd" / "metrics.json", metrics_disks())
+        self.services = Services(state / "couchd" / "events.json")
         self._status: tuple[float, dict] | None = None
         self._status_lock = threading.Lock()
+        self._changed = threading.Event()
+        self.airplay.on_change = self.changed
+        self.airplay.on_restart = self.services.expect
+
+    def changed(self) -> None:
+        """Something happened: drop the cached status and push a fresh one."""
+        with self._status_lock:
+            self._status = None
+        self._changed.set()
+
+    @staticmethod
+    def _signature(status: dict) -> tuple:
+        # What clients display; uptime, load, progress and memory are left out
+        # so they don't trigger a push every few seconds (the heartbeat has them).
+        playing = status["kodi"]["playing"] or {}
+        catalog = status["catalog"]
+        done, total = catalog.get("done") or 0, catalog.get("total") or 0
+        return (
+            status["kodi"]["running"],
+            playing.get("title"), playing.get("show"), playing.get("paused"),
+            status["airplay"]["running"], status["airplay"]["active"], status["airplay"]["kind"],
+            status["system"].get("throttled"),
+            # A sync's progress in 5 % steps.
+            catalog["state"], catalog.get("label"), (20 * done // total) if total else None,
+        )
+
+    def publish_loop(self) -> None:
+        last_sig: tuple | None = None
+        last_push = 0.0
+        while True:
+            forced = self._changed.wait(self.CHECK_INTERVAL)
+            self._changed.clear()
+            if not self.events.count:
+                last_sig = None
+                continue
+            try:
+                status = self.status()
+            except Exception:
+                log.exception("status for events failed")
+                continue
+            sig = self._signature(status)
+            now = time.monotonic()
+            if forced or sig != last_sig or now - last_push >= self.HEARTBEAT:
+                self.events.publish(status)
+                last_sig, last_push = sig, now
+
+    def start(self) -> None:
+        threading.Thread(target=self.publish_loop, name="events", daemon=True).start()
 
     def status(self) -> dict:
         # Each status runs a few subprocesses; several clients polling must
@@ -439,11 +1230,9 @@ class App:
             status = {
                 "version": VERSION,
                 "kodi": {"running": kodi, "playing": now_playing() if kodi else None},
-                "airplay": {
-                    "running": unit_active("uxplay.service"),
-                    "active": self.airplay.active,
-                    "since": self.airplay.since,
-                },
+                "airplay": self.airplay.status(),
+                "catalog": self.catalog.summary() if self.catalog
+                else {"state": "error", "label": self.catalog_error, "done": None, "total": None},
                 "system": system_status(),
             }
             self._status = (time.monotonic(), status)
@@ -460,19 +1249,90 @@ class App:
             "ports": {"api": PORT, "kodi_jsonrpc_tcp": 9090, "kodi_http": 8080},
         }
 
-    def route(self, method: str, path: str, body: dict) -> object:
+    def route(self, method: str, path: str, body: dict, query: dict[str, str] | None = None) -> object:
         parts = [p for p in path.split("/") if p][1:]  # drop "api"
+        query = query or {}
+        catalog = self.catalog
+        if catalog is None and parts[:1] in (["plex"], ["catalog"]) and parts != ["plex", "play"]:
+            raise ApiError(HTTPStatus.SERVICE_UNAVAILABLE, self.catalog_error or "Plex catalog unavailable")
         match (method, parts):
+            # -- Plex catalog (served from the index on the Pi)
+            case ("GET", ["plex"]):
+                return {**catalog.client.server(), "catalog": catalog.summary()}
+            case ("GET", ["plex", "hubs"]):
+                return {"hubs": catalog.hubs()}
+            case ("GET", ["plex", "sections"]):
+                return {"sections": catalog.sections()}
+            case ("GET", ["plex", "sections", section]):
+                return catalog.section(
+                    section,
+                    start=int(query.get("start", 0)),
+                    size=int(query.get("size", 60)),
+                    sort=query.get("sort", "title"),
+                    unwatched=query.get("unwatched") in ("1", "true"),
+                )
+            case ("GET", ["plex", "search"]):
+                return catalog.search(query.get("q", ""), query.get("type"))
+            case ("GET", ["plex", "items", key]):
+                return catalog.item(key, fresh=query.get("fresh") in ("1", "true"))
+            case ("GET", ["plex", "art"]):
+                data = catalog.art(query.get("path", ""), int(query.get("w", 300)), int(query.get("h", 450)))
+                return Raw(data, "image/jpeg")
+            # -- the index and the artwork cache
+            case ("GET", ["catalog"]):
+                return catalog.status()
+            case ("POST", ["catalog", "sync"]):
+                section = str(body["section"]) if body.get("section") else None
+                kind = "full" if body.get("full") else "quick"
+                return {"queued": catalog.enqueue(kind, section)}
+            case ("POST", ["catalog", "sections", key]):
+                return catalog.set_section(
+                    key,
+                    enabled=bool(body["enabled"]) if "enabled" in body else None,
+                    prefetch_art=bool(body["prefetch_art"]) if "prefetch_art" in body else None,
+                )
+            case ("POST", ["catalog", ("items" | "sections") as scope, key, "art"]):
+                action = str(body.get("action", ""))
+                if action not in ("fetch", "drop") or not key.isdigit():
+                    raise ApiError(HTTPStatus.BAD_REQUEST, 'action must be "fetch" or "drop", key a number')
+                suffix = "_section" if scope == "sections" else ""
+                return {"queued": catalog.enqueue(f"art_{action}{suffix}", key)}
+            case ("POST", ["catalog", "items", key, "refresh"]):
+                if not key.isdigit():
+                    raise ApiError(HTTPStatus.BAD_REQUEST, "key must be a number")
+                return {"queued": catalog.enqueue("refresh", key)}
+            case ("POST", ["catalog", "art", "clear"]):
+                return {"queued": catalog.enqueue("art_clear")}
+            case ("POST", ["catalog", "reset"]):
+                return catalog.reset()
+            # -- Plex on the TV
+            case ("POST", ["plex", "play"]):
+                result = self.plex.play(str(body.get("key", "")), bool(body.get("play", True)),
+                                        bool(body.get("from_start", False)), bool(body.get("replace", False)))
+                self.changed()
+                return result
+            # -- the TV dashboard (Kodi's screensaver; data from dashd)
+            case ("GET" | "POST", ["dashboard"]):
+                try:
+                    if method == "GET":
+                        return self.dashboard.status()
+                    enabled = bool(body["enabled"]) if "enabled" in body else None
+                    return self.dashboard.set(enabled, bool(body.get("show", False)))
+                except OSError as exc:
+                    raise ApiError(HTTPStatus.SERVICE_UNAVAILABLE, f"Kodi is not reachable: {exc}") from exc
             case ("GET", ["health"]):
                 return {"ok": True}
             case ("GET", ["status"]):
                 return self.status()
             case ("GET", ["info"]):
                 return self.info()
+            case ("GET", ["metrics"]):
+                return self.metrics.snapshot()
+            case ("GET", ["services"]):
+                return self.services.snapshot()
             case ("POST", ["airplay", "stop"]):
                 self.airplay.disconnect()
-                with self._status_lock:
-                    self._status = None
+                self.changed()
                 return {"ok": True}
             case ("POST", ["tv"]):
                 return {"via": self.cec.tv(str(body.get("power", "")))}
@@ -495,7 +1355,9 @@ class App:
                     raise ApiError(HTTPStatus.SERVICE_UNAVAILABLE, f"Kodi is not reachable: {exc}") from exc
                 return {"ok": True}
             case ("POST", ["kodi", "restart"]):
+                self.services.expect("kodi.service", "restarted from the web page")
                 unit_action("restart", "kodi.service")
+                self.changed()
                 return {"ok": True}
             case ("GET", ["audio"]):
                 return audio_status()
@@ -522,9 +1384,14 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
             log.debug("%s %s", self.address_string(), fmt % args)
 
         def _send(self, status: HTTPStatus, payload: object) -> None:
-            data = json.dumps(payload).encode()
+            if isinstance(payload, Raw):
+                data, content_type = payload.data, payload.content_type
+            else:
+                data, content_type = json.dumps(payload).encode(), "application/json"
             self.send_response(status)
-            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Type", content_type)
+            if isinstance(payload, Raw):
+                self.send_header("Cache-Control", "max-age=86400")  # artwork paths change when the art does
             self.send_header("Content-Length", str(len(data)))
             self.send_header("Access-Control-Allow-Origin", "*")
             self.send_header("Access-Control-Allow-Headers", "Content-Type")
@@ -532,8 +1399,42 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
             self.end_headers()
             self.wfile.write(data)
 
+        def _events(self) -> None:
+            """Server-Sent Events: a status snapshot now, then on every change."""
+            try:
+                q = app.events.subscribe()
+            except ApiError as exc:
+                self._send(exc.status, {"error": str(exc)})
+                return
+            try:
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("X-Accel-Buffering", "no")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self._event(app.status())
+                while True:
+                    try:
+                        self._event(q.get(timeout=20))
+                    except queue.Empty:
+                        self.wfile.write(b": ping\n\n")  # keep proxies and clients alive
+                        self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError, TimeoutError):
+                pass
+            finally:
+                app.events.unsubscribe(q)
+
+        def _event(self, payload: dict) -> None:
+            self.wfile.write(b"data: " + json.dumps(payload).encode() + b"\n\n")
+            self.wfile.flush()
+
         def _handle(self, method: str) -> None:
-            path = self.path.split("?", 1)[0]
+            path, _, raw_query = self.path.partition("?")
+            query = dict(urllib.parse.parse_qsl(raw_query))
+            if method == "GET" and path == "/api/events":
+                self._events()
+                return
             if not path.startswith("/api/"):
                 self._send(HTTPStatus.NOT_FOUND, {"error": "not found"})
                 return
@@ -544,8 +1445,8 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                     body = json.loads(self.rfile.read(min(length, 65536)) or b"{}")
                     if not isinstance(body, dict):
                         raise ApiError(HTTPStatus.BAD_REQUEST, "body must be a JSON object")
-                self._send(HTTPStatus.OK, app.route(method, path, body))
-            except ApiError as exc:
+                self._send(HTTPStatus.OK, app.route(method, path, body, query))
+            except (ApiError, PlexError) as exc:
                 self._send(exc.status, {"error": str(exc)})
             except (ValueError, json.JSONDecodeError) as exc:
                 self._send(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
@@ -571,11 +1472,27 @@ def main() -> None:
     logging.basicConfig(level=os.environ.get("COUCHD_LOG", "INFO"), format="%(levelname)s %(name)s: %(message)s")
     app = App()
     app.airplay.start()
-    DisplayWatchdog().start()
+    if app.catalog:
+        app.catalog.start()
+    app.services.start()
+
+    def every_minute() -> None:
+        app.services.check()
+        app.services.save()  # only when something happened: rare writes
+
+    app.metrics.start(every_minute)
+    app.start()
+    DisplayWatchdog(app.services).start()
     server = ThreadingHTTPServer((BIND, PORT), make_handler(app))
     server.daemon_threads = True
+    # systemd stops us with SIGTERM: exit cleanly so the metrics get saved.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     log.info("couchd %s listening on %s:%d", VERSION, BIND, PORT)
-    server.serve_forever()
+    try:
+        server.serve_forever()
+    finally:
+        app.metrics.save()
+        app.services.save()
 
 
 if __name__ == "__main__":

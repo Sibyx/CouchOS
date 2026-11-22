@@ -7,10 +7,18 @@ StartLimitIntervalSec=0
 ExecStart=/usr/bin/python3 /opt/couchos/couchd/couchd.py
 Environment=COUCHD_PORT={{ couchd_port }}
 Environment=COUCHD_KODI_RPC=http://127.0.0.1:{{ kodi_webserver_port }}/jsonrpc
+Environment=COUCHD_AIRPLAY_RECEIVER={{ airplay_receiver }}
 Environment=COUCHD_DACP_FILE=%h/.uxplay.dacp
+# Plex catalog index (~/.local/state/couchd/catalog.sqlite) and artwork cache
+# (~/.cache/couchd/art, oldest dropped beyond this size, or sooner when the
+# disk has less than the reserve free).
+Environment=COUCHD_ART_CACHE_MB={{ couchd_art_cache_mb }}
+Environment=COUCHD_DISK_RESERVE_MB={{ couchd_disk_reserve_mb }}
 Environment=COUCHD_OSD_NAME={{ airplay_name }}
 Environment="COUCHD_APP_URL={{ app_build_url }}"
 Environment="COUCHD_PLEX_URL={{ plex_url }}"
+# Disks charted on the dashboard (mount=label); unmounted ones are skipped.
+Environment="COUCHD_DISKS=/=System,{{ storage_mount }}=Media"
 Restart=always
 RestartSec=2
 

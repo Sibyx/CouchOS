@@ -45,6 +45,50 @@
     border-radius: 10px; padding: 9px 14px; min-height: 40px; cursor: pointer;
   }
   .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  /* 24 h charts */
+  :root { --series: #3987e5; --series2: #d95926; --grid: #2a2e34; --axis: #3a3f46; }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) { --series: #2a78d6; --series2: #eb6834; --grid: #e9e6df; --axis: #cfcac0; }
+  }
+  .wide { grid-column: 1 / -1; }
+  .charts { display: grid; gap: 18px 20px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .chart-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+  .chart-title { font-weight: 600; }
+  .chart-now { font-variant-numeric: tabular-nums; font-size: 17px; font-weight: 600; }
+  .chart-sub { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; min-height: 1.5em; }
+  .chart { position: relative; touch-action: pan-y; }
+  .chart svg { display: block; width: 100%; height: 110px; overflow: visible; }
+  .chart .gl { stroke: var(--grid); stroke-width: 1; }
+  .chart .base { stroke: var(--axis); stroke-width: 1; }
+  .chart .tick { fill: var(--muted); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+  .chart .line { fill: none; stroke: var(--series); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .chart .area { fill: var(--series); opacity: .14; }
+  .chart .xh { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 3; }
+  .chart .pt { fill: var(--series); stroke: var(--panel); stroke-width: 2; }
+  .chart .s2.line { stroke: var(--series2); } .chart .s2.pt { fill: var(--series2); }
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 12px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; background: var(--series); }
+  .legend .s2 i { background: var(--series2); }
+  /* power timeline: one cell per minute */
+  .chart .uv { fill: var(--bad); } .chart .thr { fill: var(--warn); } .chart .okband { fill: var(--grid); }
+  .chart.strip svg { height: 44px; }
+  .legend .uv i { background: var(--bad); height: 10px; width: 10px; } .legend .thr i { background: var(--warn); height: 10px; width: 10px; }
+  /* services */
+  .svc { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; align-items: baseline; padding: 7px 0; border-top: 1px solid var(--line); }
+  .svc:first-child { border-top: 0; padding-top: 0; }
+  .svc .name { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+  .svc .state { color: var(--muted); font-size: 13.5px; text-align: right; font-variant-numeric: tabular-nums; }
+  .svc .note { grid-column: 1 / -1; font-size: 13px; color: var(--muted); padding-left: 16px; }
+  .svc .note.bad { color: var(--bad); }
+  .events { list-style: none; padding: 0; margin: 6px 0 0; font-size: 13.5px; }
+  .events li { display: grid; grid-template-columns: 3.4em 1fr; gap: 10px; margin: 5px 0; }
+  .events time { color: var(--muted); font-variant-numeric: tabular-nums; }
+  h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 16px 0 4px; font-weight: 600; }
+  .tip {
+    position: absolute; top: 2px; pointer-events: none; white-space: nowrap;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 3px 8px; font-size: 12.5px;
+    font-variant-numeric: tabular-nums; box-shadow: 0 2px 8px rgb(0 0 0 / .25);
+  }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -77,6 +121,18 @@
       <dt>Up for</dt><dd id="up">—</dd>
       <dt>Version</dt><dd id="ver">—</dd>
     </dl>
+  </section>
+
+  <section class="wide">
+    <h2>Last 24 hours</h2>
+    <div class="charts" id="charts"><div class="muted">Loading…</div></div>
+  </section>
+
+  <section class="wide">
+    <h2>Services</h2>
+    <div id="services"><div class="muted">Loading…</div></div>
+    <h3>Last 24 hours</h3>
+    <ul class="events" id="events"></ul>
   </section>
 
   <section>
@@ -167,12 +223,22 @@ async function loadInfo() {
 
 async function loadStatus() {
   try {
-    const s = await api("status");
+    render(await api("status"));
+  } catch {
+    $("#tv").textContent = "Unreachable";
+  }
+}
+
+function render(s) {
+  {
     const playing = s.kodi.playing;
     $("#airplayactions").hidden = !s.airplay.active;
     if (s.airplay.active) {
       $("#tv").textContent = "AirPlay";
-      $("#tvsub").textContent = "A phone is sharing its screen.";
+      $("#tvsub").textContent = {
+        audio: "A phone is playing music.",
+        video: "A phone is playing a video.",
+      }[s.airplay.kind] || "A phone is sharing its screen.";
     } else if (!s.kodi.running) {
       $("#tv").textContent = "Starting…";
       $("#tvsub").textContent = "";
@@ -189,10 +255,336 @@ async function loadStatus() {
     const p = power(s.system.throttled);
     $("#power").hidden = !p;
     $("#powertext").textContent = p ? p + " Use a 5.1 V / 2.5 A power supply (ideally the official Raspberry Pi one) and a short cable." : "";
-  } catch {
-    $("#tv").textContent = "Unreachable";
   }
 }
+
+// couchd pushes status on every change (Server-Sent Events). EventSource
+// reconnects by itself; poll only while the stream is down.
+let fallback = null;
+function subscribe() {
+  const es = new EventSource("/api/events");
+  es.onmessage = (e) => {
+    if (fallback) { clearInterval(fallback); fallback = null; }
+    render(JSON.parse(e.data));
+  };
+  es.onerror = () => {
+    if (!fallback) fallback = setInterval(loadStatus, 10000);
+  };
+}
+
+// --- 24 h charts --------------------------------------------------------------
+// couchd samples once a minute (GET /api/metrics). One single-series chart per
+// measure; hovering one chart shows the same minute on all of them.
+const NS = "http://www.w3.org/2000/svg";
+const DAY = 86400, H = 110, PAD = { l: 34, r: 6, t: 6, b: 18 };
+let metrics = null, charts = [];
+
+const svg = (tag, attrs = {}, parent) => {
+  const el = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  if (parent) parent.append(el);
+  return el;
+};
+const hhmm = (t) => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+const gb = (v) => v >= 100 ? `${v.toFixed(0)} GB` : `${v.toFixed(1)} GB`;
+const stats = (vs) => {
+  const ok = vs.filter((v) => v != null);
+  return ok.length ? { avg: ok.reduce((a, b) => a + b, 0) / ok.length, max: Math.max(...ok), min: Math.min(...ok), last: ok.at(-1) } : null;
+};
+
+function chartSpecs(m) {
+  const pct = (v, total) => v == null || !total ? null : 100 * v / total;
+  const specs = [];
+  const power = powerSpec(m);
+  if (power) specs.push(power);
+  const cpu = stats(m.cpu);
+  specs.push({
+    title: "Processor", series: [{ values: m.cpu }], lo: 0, hi: 100, ticks: [0, 50, 100], unit: "%",
+    tip: (i) => `${m.cpu[i].toFixed(0)} %`,
+    now: cpu && `${cpu.last.toFixed(0)} %`,
+    sub: cpu && `average ${cpu.avg.toFixed(0)} % · peak ${cpu.max.toFixed(0)} %`,
+  });
+  const memPct = m.mem_mb.map((v) => pct(v, m.mem_total_mb)), mem = stats(m.mem_mb);
+  specs.push({
+    title: "Memory in use", series: [{ values: memPct }], lo: 0, hi: 100, ticks: [0, 50, 100], unit: "%",
+    tip: (i) => `${m.mem_mb[i]} MB · ${memPct[i].toFixed(0)} %`,
+    now: mem && `${mem.last} MB`,
+    sub: mem && `of ${m.mem_total_mb} MB · peak ${mem.max} MB`,
+  });
+  const temp = stats(m.temp_c);
+  if (temp) specs.push({
+    title: "Temperature", series: [{ values: m.temp_c }], lo: Math.min(30, Math.floor(temp.min / 10) * 10),
+    hi: Math.max(85, Math.ceil(temp.max / 5) * 5), ticks: [40, 60, 80], unit: "°",
+    tip: (i) => `${m.temp_c[i].toFixed(1)} °C`,
+    now: `${temp.last.toFixed(0)} °C`,
+    sub: `peak ${temp.max.toFixed(0)} °C · slows down at 80 °C`,
+  });
+  const rx = stats(m.net_rx_mbps || []), tx = stats(m.net_tx_mbps || []);
+  if (rx && tx) {
+    const hi = niceCeil(Math.max(rx.max, tx.max, 1));
+    const mbps = (v) => v >= 10 ? v.toFixed(0) : v >= 1 ? v.toFixed(1) : v.toFixed(2);
+    specs.push({
+      title: "Network · Mbit/s",
+      series: [{ values: m.net_rx_mbps, name: "Download" }, { values: m.net_tx_mbps, name: "Upload", cls: "s2" }],
+      lo: 0, hi, ticks: [0, hi / 2, hi], unit: "",
+      tip: (i) => `↓ ${mbps(m.net_rx_mbps[i] ?? 0)} · ↑ ${mbps(m.net_tx_mbps[i] ?? 0)} Mbit/s`,
+      now: `↓ ${mbps(rx.last)} · ↑ ${mbps(tx.last)}`,
+      legend: [["", `Download, peak ${mbps(rx.max)}`], ["s2", `Upload, peak ${mbps(tx.max)}`]],
+    });
+  }
+  for (const d of m.disks) {
+    const series = d.used_gb_series, used = stats(series);
+    if (!used || !d.total_gb) continue;
+    const usedPct = series.map((v) => pct(v, d.total_gb));
+    const first = series.find((v) => v != null), change = used.last - first;
+    specs.push({
+      title: `Storage · ${d.label}`, series: [{ values: usedPct }], lo: 0, hi: 100, ticks: [0, 50, 100], unit: "%",
+      tip: (i) => `${gb(series[i])} used · ${usedPct[i].toFixed(0)} %`,
+      now: `${gb(d.total_gb - d.used_gb)} free`,
+      sub: `${gb(d.used_gb)} of ${gb(d.total_gb)} used` +
+        (Math.abs(change) >= 0.05 ? ` · ${change > 0 ? "+" : "−"}${gb(Math.abs(change))} today` : ""),
+    });
+  }
+  return specs;
+}
+
+const niceCeil = (v) => {
+  const p = 10 ** Math.floor(Math.log10(v));
+  return [1, 2, 5, 10].map((k) => k * p).find((s) => s >= v);
+};
+
+// Power: one cell per minute on a 24 h strip. Under-voltage comes from the
+// rpi_volt sensor (polled every 2 s); "slowed down" from the firmware.
+function powerSpec(m) {
+  if (!m.power || !m.power.some((v) => v != null)) return null;
+  const minutes = (bit) => m.power.filter((v) => v & bit).length;
+  const episodes = (bit) => m.power.filter((v, i) => v & bit && !(m.power[i - 1] & bit)).length;
+  const lastAt = (bit) => { for (let i = m.t.length - 1; i >= 0; i--) if (m.power[i] & bit) return m.t[i]; return null; };
+  const uv = minutes(1), thr = minutes(2), last = m.power.at(-1);
+  const dur = (n) => n >= 90 ? `${(n / 60).toFixed(1)} h` : `${n} min`;
+  const parts = [];
+  if (uv) parts.push(`Under-voltage ${episodes(1)}× (${dur(uv)} in total), last at ${hhmm(lastAt(1))}`);
+  if (thr) parts.push(`slowed down for ${dur(thr)}`);
+  return {
+    kind: "strip", wide: true,
+    title: "Power",
+    now: last & 1 ? "Under-voltage now" : last & 2 ? "Slowed down now" : "OK",
+    sub: parts.length ? parts.join(" · ") : "No under-voltage in the last 24 hours.",
+    legend: [["uv", "Under-voltage"], ["thr", "Slowed down"]],
+    tip: (i) => m.power[i] == null ? null : m.power[i] & 1 ? "Under-voltage" : m.power[i] & 2 ? "Slowed down" : "Power OK",
+  };
+}
+
+function chartBox(spec, host) {
+  const box = document.createElement("div");
+  if (spec.wide) box.className = "wide";
+  box.innerHTML = `<div class="chart-head"><span class="chart-title"></span><span class="chart-now"></span></div>
+    <div class="chart-sub"></div><div class="chart"></div>`;
+  box.querySelector(".chart-title").textContent = spec.title;
+  box.querySelector(".chart-now").textContent = spec.now || "—";
+  const sub = box.querySelector(".chart-sub");
+  if (spec.sub) sub.append(spec.sub);
+  if (spec.legend) {
+    const legend = Object.assign(document.createElement("div"), { className: "legend" });
+    for (const [cls, text] of spec.legend) {
+      const item = Object.assign(document.createElement("span"), { className: cls });
+      item.append(document.createElement("i"), text);
+      legend.append(item);
+    }
+    sub.append(legend);
+  }
+  host.append(box);
+  const wrap = box.querySelector(".chart");
+  if (spec.kind === "strip") wrap.classList.add("strip");
+  return wrap;
+}
+
+// Time axis and hover wiring shared by the line charts and the power strip.
+function timeFrame(m, wrap, height, label) {
+  const W = Math.max(wrap.clientWidth, 200);
+  const x0 = m.now - DAY;
+  const x = (t) => PAD.l + (t - x0) / DAY * (W - PAD.l - PAD.r);
+  const root = svg("svg", { viewBox: `0 0 ${W} ${height}`, role: "img", "aria-label": `${label}, last 24 hours` }, wrap);
+  // Every 6 hours, on the hour (local time).
+  const start = new Date(x0 * 1000); start.setMinutes(0, 0, 0);
+  for (let t = start.getTime() / 1000 + 3600; t < m.now; t += 3600) {
+    if (new Date(t * 1000).getHours() % 6) continue;
+    svg("text", { class: "tick", x: x(t), y: height - 4, "text-anchor": "middle" }, root).textContent = hhmm(t);
+  }
+  const tip = Object.assign(document.createElement("div"), { className: "tip", hidden: true });
+  wrap.append(tip);
+  const placeTip = (px, text) => {
+    tip.textContent = text;
+    tip.hidden = false;
+    // Beside the crosshair, flipped to its left near the right edge.
+    const w = tip.offsetWidth;
+    tip.style.left = (px + 10 + w <= W ? px + 10 : Math.max(0, px - 10 - w)) + "px";
+  };
+  const toTime = (e) => x0 + (e.clientX - root.getBoundingClientRect().left - PAD.l) / (W - PAD.l - PAD.r) * DAY;
+  root.addEventListener("pointermove", (e) => charts.forEach((c) => c(toTime(e))));
+  root.addEventListener("pointerdown", (e) => charts.forEach((c) => c(toTime(e))));
+  root.addEventListener("pointerleave", () => charts.forEach((c) => c(null)));
+  return { W, x, root, tip, placeTip };
+}
+
+function drawStrip(spec, m, wrap) {
+  const SH = 44, top = 4, bar = 20;
+  const { x, root, tip, placeTip } = timeFrame(m, wrap, SH, spec.title);
+  const gap = 3 * m.interval;
+  // Grey where there is data, coloured minutes on top.
+  m.t.forEach((t, i) => {
+    if (m.power[i] == null) return;
+    const w = Math.max(x(t + m.interval) - x(t), 1.5);
+    const cls = m.power[i] & 1 ? "uv" : m.power[i] & 2 ? "thr" : "okband";
+    const h = cls === "okband" ? 6 : bar;
+    svg("rect", { class: cls, x: x(t) - w, y: top + (bar - h), width: w, height: h }, root);
+  });
+  const xh = svg("line", { class: "xh", y1: 0, y2: top + bar + 2, visibility: "hidden" }, root);
+  return (t) => {
+    const i = nearest(m.t, t);
+    const text = i >= 0 && t != null && Math.abs(m.t[i] - t) <= gap ? spec.tip(i) : null;
+    if (!text) { xh.setAttribute("visibility", "hidden"); tip.hidden = true; return; }
+    const px = x(m.t[i]);
+    xh.setAttribute("x1", px); xh.setAttribute("x2", px); xh.setAttribute("visibility", "visible");
+    placeTip(px, `${text} · ${hhmm(m.t[i])}`);
+  };
+}
+
+// Call once every chart box is in the grid, so the width is the final one.
+function drawChart(spec, m, wrap) {
+  if (spec.kind === "strip") return drawStrip(spec, m, wrap);
+  const { W, x, root, tip, placeTip } = timeFrame(m, wrap, H, spec.title);
+  const y = (v) => PAD.t + (1 - (v - spec.lo) / (spec.hi - spec.lo)) * (H - PAD.t - PAD.b);
+  const fmtTick = (v) => (Number.isInteger(v) ? v : v.toFixed(1)) + spec.unit;
+  for (const v of spec.ticks) {
+    svg("line", { class: v === spec.lo ? "base" : "gl", x1: PAD.l, x2: W - PAD.r, y1: y(v), y2: y(v) }, root);
+    svg("text", { class: "tick", x: PAD.l - 6, y: y(v) + 3.5, "text-anchor": "end" }, root).textContent = fmtTick(v);
+  }
+  if (!spec.ticks.includes(spec.lo)) svg("line", { class: "base", x1: PAD.l, x2: W - PAD.r, y1: y(spec.lo), y2: y(spec.lo) }, root);
+
+  const gap = 3 * m.interval;
+  const clamp = (v) => Math.min(spec.hi, Math.max(spec.lo, v));
+  const single = spec.series.length === 1;  // an area fill only when it can't hide another line
+  for (const { values, cls = "" } of spec.series) {
+    // Break the line where samples are missing (couchd or the box was down).
+    const segs = [];
+    let seg = [];
+    m.t.forEach((t, i) => {
+      const v = values[i];
+      if (v == null || (seg.length && t - m.t[seg.at(-1)] > gap)) { if (seg.length) segs.push(seg); seg = []; }
+      if (v != null) seg.push(i);
+    });
+    if (seg.length) segs.push(seg);
+    for (const s of segs) {
+      const pts = s.map((i) => `${x(m.t[i]).toFixed(1)},${y(clamp(values[i])).toFixed(1)}`);
+      const base = y(spec.lo).toFixed(1);
+      if (single) svg("path", { class: "area", d: `M${x(m.t[s[0]]).toFixed(1)},${base}L${pts.join("L")}L${x(m.t[s.at(-1)]).toFixed(1)},${base}Z` }, root);
+      svg("path", { class: `line ${cls}`, d: (s.length > 1 ? "M" + pts.join("L") : `M${pts[0]}h0.1`) }, root);
+    }
+  }
+
+  const xh = svg("line", { class: "xh", y1: PAD.t, y2: y(spec.lo), visibility: "hidden" }, root);
+  const dots = spec.series.map(({ cls = "" }) => svg("circle", { class: `pt ${cls}`, r: 4.5, visibility: "hidden" }, root));
+
+  return (t) => {
+    const i = nearest(m.t, t);
+    const hit = t != null && i >= 0 && Math.abs(m.t[i] - t) <= gap && spec.series.some((s) => s.values[i] != null);
+    if (!hit) {
+      xh.setAttribute("visibility", "hidden"); dots.forEach((d) => d.setAttribute("visibility", "hidden")); tip.hidden = true;
+      return;
+    }
+    const px = x(m.t[i]);
+    xh.setAttribute("x1", px); xh.setAttribute("x2", px); xh.setAttribute("visibility", "visible");
+    spec.series.forEach((s, k) => {
+      const v = s.values[i];
+      dots[k].setAttribute("visibility", v == null ? "hidden" : "visible");
+      if (v != null) { dots[k].setAttribute("cx", px); dots[k].setAttribute("cy", y(clamp(v))); }
+    });
+    placeTip(px, `${spec.tip(i)} · ${hhmm(m.t[i])}`);
+  };
+}
+
+function nearest(ts, t) {
+  if (!ts.length || t == null) return -1;
+  let lo = 0, hi = ts.length - 1;
+  while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (ts[mid] < t) lo = mid; else hi = mid; }
+  return Math.abs(ts[lo] - t) <= Math.abs(ts[hi] - t) ? lo : hi;
+}
+
+function renderCharts() {
+  const host = $("#charts");
+  host.replaceChildren();
+  charts = [];
+  if (!metrics || metrics.t.length < 2) {
+    host.append(Object.assign(document.createElement("div"), { className: "muted", textContent: "Collecting data — the first points appear after a couple of minutes." }));
+    return;
+  }
+  const specs = chartSpecs(metrics);
+  const wraps = specs.map((spec) => chartBox(spec, host));
+  charts = specs.map((spec, i) => drawChart(spec, metrics, wraps[i]));
+}
+
+async function loadMetrics() {
+  try { metrics = await api("metrics"); } catch { return; }
+  renderCharts();
+}
+// --- services -------------------------------------------------------------------
+function ago(t) {
+  return uptime(Math.max(0, Date.now() / 1000 - t));
+}
+
+function renderServices(s) {
+  const dayAgo = Date.now() / 1000 - DAY;
+  const host = $("#services");
+  host.replaceChildren();
+  for (const u of s.units) {
+    const recent = s.events.filter((e) => e.unit === u.unit && e.t >= dayAgo);
+    const crashes = recent.filter((e) => e.kind === "crash" || e.kind === "failed");
+    // Status is never colour alone: the dot comes with a written state.
+    const [tone, state] =
+      u.active === "active" ? (crashes.length ? ["warn", "running"] : ["ok", "running"]) :
+      u.active === "activating" || u.active === "reloading" ? ["warn", "starting"] :
+      u.active === "failed" ? ["bad", "failed"] : ["", "stopped"];
+    const row = Object.assign(document.createElement("div"), { className: "svc" });
+    const name = Object.assign(document.createElement("div"), { className: `name ${tone}` });
+    name.append(Object.assign(document.createElement("span"), { className: "dot" }), u.label);
+    const st = Object.assign(document.createElement("div"), { className: "state" });
+    st.textContent = u.active === "active" && u.since ? `${state} · ${ago(u.since)}` : state;
+    row.append(name, st);
+    let note = "";
+    const failedAt = recent.filter((e) => e.kind === "failed").at(-1);
+    if (u.active === "failed") note = `Stopped with an error (${u.result})` + (failedAt ? ` at ${hhmm(failedAt.t)}` : "");
+    else if (crashes.length) note = `Crashed ${crashes.length}× today, last at ${hhmm(crashes.at(-1).t)}`;
+    else if (recent.length) note = `Restarted ${recent.length}× today, last at ${hhmm(recent.at(-1).t)}`;
+    if (note) row.append(Object.assign(document.createElement("div"), { className: `note${crashes.length || u.active === "failed" ? " bad" : ""}`, textContent: note }));
+    host.append(row);
+  }
+  const list = $("#events");
+  list.replaceChildren();
+  const events = s.events.filter((e) => e.t >= dayAgo).slice(-10).reverse();
+  const verb = { boot: "", restart: "restarted", crash: "crashed — systemd restarted it", failed: "failed" };
+  for (const e of events) {
+    const li = document.createElement("li");
+    const time = Object.assign(document.createElement("time"), { textContent: hhmm(e.t) });
+    time.dateTime = new Date(e.t * 1000).toISOString();
+    const what = e.kind === "boot" ? e.label : `${e.label} ${verb[e.kind] || e.kind}${e.detail && e.kind !== "crash" ? ` (${e.detail})` : ""}`;
+    li.append(time, what);
+    list.append(li);
+  }
+  if (!events.length) list.append(Object.assign(document.createElement("li"), { className: "muted", textContent: "No restarts or crashes." }));
+}
+
+async function loadServices() {
+  try { renderServices(await api("services")); } catch { $("#services").textContent = "Unavailable."; }
+}
+
+// Redraw on width changes only (phones resize the height while scrolling).
+let resizeTimer, lastWidth = innerWidth;
+addEventListener("resize", () => {
+  if (innerWidth === lastWidth) return;
+  lastWidth = innerWidth;
+  clearTimeout(resizeTimer); resizeTimer = setTimeout(renderCharts, 150);
+});
 
 $("#stopairplay").onclick = () => api("airplay/stop", {}).then(loadStatus);
 $("#restartkodi").onclick = (e) => {
@@ -201,13 +593,16 @@ $("#restartkodi").onclick = (e) => {
     setTimeout(() => { delete e.target.dataset.armed; e.target.textContent = "Restart Kodi"; }, 3000);
     return;
   }
-  api("kodi/restart", {});
+  api("kodi/restart", {}).finally(() => setTimeout(loadServices, 2000));
   e.target.textContent = "Restarting…";
 };
 
 loadInfo().catch(() => {});
-loadStatus();
-setInterval(loadStatus, 5000);
+subscribe();
+loadMetrics();
+loadServices();
+setInterval(loadMetrics, 60000);
+setInterval(loadServices, 30000);
 </script>
 </body>
 </html>

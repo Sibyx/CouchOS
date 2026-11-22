@@ -1,0 +1,19 @@
+diff --git a/inputstream.airplay/resources/lib/service.py b/inputstream.airplay/resources/lib/service.py
+index bff0e8f..5c5e345 100644
+--- a/inputstream.airplay/resources/lib/service.py
++++ b/inputstream.airplay/resources/lib/service.py
+@@ -712,7 +712,13 @@ def start_hls(url, start_position):
+     # Senders use both: an app hands over a playlist, while Safari hands over
+     # the video element's own URL, which Kodi plays perfectly well itself.
+     path = urlparse(url).path.lower()
+-    if path.endswith('.m3u8') or path.endswith('.mpd'):
++    # Without inputstream.adaptive installed, naming it fails the play outright;
++    # ffmpeg's own HLS demuxer is the better bet then (a self-hosted server
++    # such as Plex's transcoder has an ordinary certificate).
++    have_adaptive = xbmc.getCondVisibility('System.AddonIsEnabled(inputstream.adaptive)')
++    if not have_adaptive:
++        log('inputstream.adaptive is not installed, leaving the playlist to ffmpeg')
++    if have_adaptive and (path.endswith('.m3u8') or path.endswith('.mpd')):
+         # Left to ffmpeg's HLS demuxer this fails at the first segment: the
+         # CDN is https and ffmpeg's TLS errors out here, whereas
+         # inputstream.adaptive fetches over Kodi's own HTTP stack.

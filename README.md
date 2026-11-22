@@ -5,6 +5,7 @@ A minimal media appliance for a **Raspberry Pi 3B+** driving a Samsung TV over H
 - **Plex** on the TV: Kodi 21 (GBM, hardware H.264) + [PM4K](https://github.com/pannal/plex-for-kodi) in its kiosk mode, so the TV boots straight into Plex
 - **AirPlay** from iPhone/Mac: [UxPlay](https://github.com/FDH2/UxPlay) 1.73.7 receives, Kodi plays it on top of Plex. No modes: start mirroring and the TV wakes and shows it; stop and Plex is back immediately
 - **TV remote** works via HDMI-CEC; phone control via the iOS app (`repos/couchos-app`), the Kodi app, or the JSON API; `http://beelzebub-tv.local/` is an info dashboard
+- **Dashboard** when the TV is idle: clock, weather for Bratislava Staré Mesto, and a new frog every day (Kodi screensaver + `dashd`, see [`dashd/README.md`](dashd/README.md))
 - **Bluetooth speaker** (e.g. JBL) via PipeWire
 - **1 TB HDD** at `/srv/media` for local photos, music and videos
 
@@ -16,7 +17,8 @@ A minimal media appliance for a **Raspberry Pi 3B+** driving a Samsung TV over H
                           ▼                                                                         ▼
  iOS app ── TCP :9090 ─────────────────────────────────────────────────────────────────► kodi (GBM) + PM4K ──HDMI──► TV
          └─ HTTP :8765 ──► couchd ── JSON-RPC: Player.Open/Stop, CEC ──────────────────►   (never stops)
- Browser ── :80 ──► couch-web (podman, Caddy): dashboard
+ Browser ── :80 ──► couch-web (podman, Caddy): dashboard; /api → couchd, /v1 → dashd
+ Open-Meteo, iNaturalist ──► dashd :8766 ── NotifyAll ──► Kodi screensaver (TV dashboard)
 ```
 
 - **The TV is always Kodi + Plex.** AirPlay is a video Kodi plays on top: when UxPlay's `-dacp` file appears, couchd opens `udp://127.0.0.1:5010/airplay.ts` in Kodi (refresh-rate switching paused, TV woken over CEC). When it disappears, couchd stops the video and Plex is exactly where it was. No Kodi restarts.
@@ -32,6 +34,7 @@ A minimal media appliance for a **Raspberry Pi 3B+** driving a Samsung TV over H
 | `uxplay/` | Docker build of UxPlay for trixie arm64 → `uxplay/dist/` |
 | `ansible/` | Everything on top of the base image (roles: base, tv_user, storage, audio, bluetooth, kodi, uxplay, couchd, web) |
 | `couchd/` | Control daemon (Python stdlib only) |
+| `dashd/` | Dashboard daemon (Rust): widget data for the TV and the phone. `build.sh` → `dashd/dist/` |
 | `web/` | Web UI (single static page) |
 
 ## 1. Build the base image (on the Mac)
@@ -41,6 +44,7 @@ Needs Docker (arm64, native on Apple Silicon).
 ```sh
 image/build.sh            # ~4 min → out/image_<date>-couchos.img.xz (pi-gen is cloned to ~/.cache/couchos)
 uxplay/build.sh           # ~2 min → uxplay/dist/uxplay-1.73.7-trixie-arm64.{tar.gz,DEPENDS}
+dashd/build.sh            # ~5 min → dashd/dist/dashd-0.1.0-trixie-arm64
 ```
 
 The image is pi-gen stage0 and stage1 plus `stage-couchos`, which:
@@ -92,7 +96,8 @@ The Pi 3B+ can supply only 1.2 A across all USB ports. A 2.5" HDD can draw close
 ```
 GET  /api/status                      now playing, AirPlay session, temp/mem/power
 GET  /api/info                        hostname, addresses, AirPlay name, links
-POST /api/airplay/stop                end the current AirPlay session
+POST /api/airplay/stop                end the current AirPlay session (kodi receiver: stops the item and
+                                      restarts inputstream.airplay's daemon, which drops the sender)
 POST /api/tv          {"power": "on|standby"}
 POST /api/kodi/input  {"action": "up|down|left|right|select|back|home|info|menu|playpause|stop|forward|rewind"}
 POST /api/kodi/text   {"text": "...", "done": true}   types into the TV's on-screen keyboard
@@ -101,7 +106,41 @@ GET  /api/audio       POST /api/audio {"volume": 0-150} | {"delta": ±n} | {"mut
 GET  /api/bluetooth   POST /api/bluetooth/scan
 POST /api/bluetooth/{pair|connect|disconnect|remove}  {"mac": "AA:BB:..."}
 POST /api/system/{reboot|poweroff}
+GET  /api/dashboard                   {"enabled": bool}: is the dashboard Kodi's idle screen
+POST /api/dashboard   {"enabled": bool} | {"show": true}   show: wake the TV and open it now
+                      (409 while something plays). A playbook run resets enabled to dashboard_enabled
+
+GET  /api/plex                        the Plex server couchd browses (PM4K's sign-in and selected server)
+GET  /api/plex/hubs                   home rows: Continue Watching, On Deck, ... (live, served from a 60 s copy)
+GET  /api/plex/sections               movie and show libraries in the index, with counts
+GET  /api/plex/sections/{id}?start=0&size=60&sort=added|watched|title|year|rating&unwatched=1
+GET  /api/plex/search?q=...&type=all|movie|show|episode   grouped, best group first
+GET  /api/plex/items/{ratingKey}[?fresh=1]   details; shows/seasons with children and up_next;
+                                      fresh: ask the server first (4 s), else the copy ("stale")
+GET  /api/plex/art?path=/library/...&w=300&h=450   artwork (JPEG) from the cache on the Pi
+
+GET  /api/catalog                     the index: state, running jobs, counts, libraries, artwork cache
+POST /api/catalog/sync    {"full": false, "section": "1"}       check for changes / full sync (all or one library)
+POST /api/catalog/sections/{id}   {"enabled": bool, "prefetch_art": bool}   in the index or not; keep artwork
+POST /api/catalog/items/{ratingKey}/refresh                     re-read an entry and everything under it
+POST /api/catalog/{items|sections}/{id}/art   {"action": "fetch|drop"}   save or remove artwork
+POST /api/catalog/art/clear           POST /api/catalog/reset (rebuild the index)
+POST /api/plex/play   {"key": "12345", "play": true, "from_start": false, "replace": false}
+                      Plex on the TV opens/plays it. 409 while AirPlay is on screen unless "replace"
+                      (playing over it makes inputstream.airplay stop the sender). {"starting": true}
+                      means PM4K was not running: couchd starts it and opens the item in the background.
 ```
+
+### Plex from the phone
+
+The app's Browse tab shows the Plex catalog. **Play** makes Plex on the TV (PM4K) play the item, and the Pi streams it from the server (the phone only picks).
+
+- couchd reads PM4K's settings (`addon_data/script.plexmod/settings.xml`): the account, the known servers with each server's access token, and the selected server. It tries that server's connections, LAN first. The token never leaves the Pi, and the phone sees the same Plex user, Continue Watching and watched state as the TV.
+- **Index** (`couchd/plexcatalog.py`): the phone browses a copy of the libraries in SQLite on the Pi (`~/.local/state/couchd/catalog.sqlite`), so screens answer in milliseconds whatever the server's speed. Search is FTS5: every word matches as a prefix, accents are optional ("zlt" finds "Žltý"), titles rank above shows, cast, genres and year, and episodes match on their own title only. A background worker keeps it current: a full sync per library at start and every 12 h (paged, 200 at a time; what's gone from Plex is dropped), a quick check every 5 min (most recently updated and watched entries, newest first, until older than the last check), and per entry on request. Opening a detail screen also asks the server for that entry (4 s, else the copy is shown, marked as such). Until the first full sync is done, couchd falls back to asking the server.
+- **Artwork** is cached on the Pi (`~/.cache/couchd/art`, `couchd_art_cache_mb`, least recently used dropped first) in a few fixed sizes, so the phone's requests land on the same files; the phone caches it too (HTTP caching).
+- **Controls** in the app: the drive button on Browse opens the index (state, progress, contents, artwork cache; per library: in the index or not, keep artwork, check, full sync; rebuild). Every movie, show, season and episode has a long-press menu (and ⋯ on its screen) to refresh it from Plex or save or remove its artwork, for it and everything under it.
+- Play: couchd sends Kodi `JSONRPC.NotifyAll {"sender": "couchos", "message": "open", "data": {"key": ...}}` (and starts PM4K first if it isn't running). `ansible/roles/kodi/files/pm4k-patches/0001-couchos-remote-open.patch` makes PM4K's home window open that item with the same code a click on a home row uses. Transcoding (HEVC), resume, subtitles and watched state stay PM4K's.
+- `kodi-addons.py install --patches DIR` applies the patches to a fresh copy of the pinned PM4K commit and installs it only if every patch applies. Its marker records the commit plus a hash of the patches, so changing a patch reinstalls PM4K. When bumping `pm4k_ref`, check the patch still applies: `patch -p1 --dry-run`.
 
 ## Limits of the hardware
 
@@ -121,3 +160,9 @@ These parts were designed from the documentation and need confirming on real har
 6. **AirPlay picture:** `kmssink` scaling and full screen on the Samsung. Adjust `uxplay_args` (e.g. `-vs "kmssink can-scale=true"`) if the image is not full screen.
 7. `curl http://beelzebub-tv.local/api/status` and the web UI respond; `avahi-browse -art` lists the services.
 8. Bluetooth: pair the JBL, then `wpctl status` shows it as the default sink.
+9. **Dashboard:** `curl -X POST -d '{"show":true}' http://beelzebub-tv.local/api/dashboard` wakes the TV and shows it; a remote key returns to Plex. Check:
+   - With the TV **off**, `show` wakes it and the dashboard *stays* up. Kodi ends the screensaver when CEC reports it became the active source, so `service.couchos` waits 5 s between the wake and the screensaver. Raise the delay if it still closes.
+   - Left alone on PM4K's home, the dashboard appears after 5 minutes (PM4K must not inhibit the screensaver).
+   - Kodi → Settings → System → Input → Peripherals → CEC → *Devices to put in standby on screensaver* is off, or the TV turns off with it.
+   - The big clock is `font_clock` zoomed 230 %. If it looks soft, lower the zoom in `screensaver-couchos-dashboard.xml`.
+   - `curl http://beelzebub-tv.local/v1/views/tv` shows weather and frog properties, and `journalctl --user -u dashd` (as `tv`) is quiet.

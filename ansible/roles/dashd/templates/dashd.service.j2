@@ -1,0 +1,22 @@
+[Unit]
+Description=dashd - CouchOS dashboard data (clock, weather, frog of the day)
+# No network ordering (a user unit can't wait for it): failed fetches at
+# boot are retried with backoff.
+StartLimitIntervalSec=0
+
+[Service]
+ExecStart=/opt/couchos/dashd/dashd
+Environment=DASHD_CONFIG=/opt/couchos/dashd/dashd.json
+# Two threads serve HTTP, one polls: glibc would give each its own malloc
+# arena. One is plenty and keeps the resident size at a few MB.
+Environment=MALLOC_ARENA_MAX=1
+# A ceiling well above normal use: a leak gets dashd restarted, not Kodi
+# squeezed on a 1 GB Pi.
+MemoryHigh=24M
+MemoryMax=32M
+Nice=5
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

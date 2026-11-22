@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<addon id="screensaver.couchos.dashboard" name="CouchOS Dashboard" version="0.1.0" provider-name="CouchOS">
+    <requires>
+        <import addon="xbmc.python" version="3.0.0"/>
+    </requires>
+    <!-- A screensaver, so Kodi decides when it shows: on idle, never over
+         video, gone on the first key from the TV remote or the phone. -->
+    <extension point="xbmc.ui.screensaver" library="screensaver.py"/>
+    <extension point="xbmc.addon.metadata">
+        <summary lang="en_GB">Clock, weather and the frog of the day</summary>
+        <description lang="en_GB">Shows the CouchOS dashboard (dashd) while the TV is idle.</description>
+        <platform>all</platform>
+        <license>MIT</license>
+    </extension>
+</addon>

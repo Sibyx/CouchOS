@@ -66,20 +66,21 @@ struct MoreView: View {
                 }
 
                 Section {
-                    TextField("Host", text: $hostField)
+                    TextField("Found automatically", text: $hostField)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
-                        .onSubmit {
-                            model.host = hostField
-                            model.reconnect()
-                        }
+                        .onSubmit { model.pinHost(hostField) }
                     Button("Restart Kodi", role: .destructive) { model.restartKodi() }
                 } header: {
                     Text("Device")
                 } footer: {
-                    if let system = model.status?.system {
-                        Text("\(system.tempC.map { String(format: "%.0f °C", $0) } ?? "–") · \(system.memAvailableMb) MB free")
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(model.hostPinned ? "Using this host. Clear it to find the TV box automatically."
+                                              : "Found automatically: \(model.host). Type a host to use another.")
+                        if let system = model.status?.system {
+                            Text("\(system.tempC.map { String(format: "%.0f °C", $0) } ?? "–") · \(system.memAvailableMb) MB free")
+                        }
                     }
                 }
             }
@@ -87,7 +88,7 @@ struct MoreView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
             .task {
-                hostField = model.host
+                hostField = model.hostPinned ? model.host : ""
                 await model.refreshBluetooth()
                 await model.refreshStatus()
             }

@@ -1,0 +1,88 @@
+CouchOS: open a Plex item sent from a phone.
+
+The phone app finds an item in the Plex catalog and couchd sends Kodi
+JSONRPC.NotifyAll {"sender": "couchos", "message": "open",
+"data": {"key": <ratingKey>, "play": true, "from_start": false}}.
+PM4K's monitor turns it into a "remote.open" signal and the home window
+opens the item with the same opener a click on a hub item uses, so
+playback, transcoding, resume and watched state are PM4K's own.
+
+--- a/lib/monitor.py
++++ b/lib/monitor.py
+@@ -1,4 +1,6 @@
+ # coding=utf-8
++import json
++
+ from kodi_six import xbmc
+ from .settings_util import getSetting
+ from .properties_core import _setGlobalProperty
+@@ -72,6 +74,22 @@ class UtilityMonitor(xbmc.Monitor, signalsmixin.SignalsMixin):
+             return
+
+         LOG("Notification: {} {} {}".format(sender, method, data))
++        if sender == 'couchos' and method == 'Other.open':
++            # CouchOS: a phone picked an item. JSONRPC.NotifyAll with
++            # sender "couchos", message "open", data {"key": ratingKey,
++            # "play": bool, "from_start": bool}. The home window opens it.
++            try:
++                args = json.loads(data) if data else {}
++            except ValueError:
++                args = {}
++            key = str(args.get('key') or '')
++            if key.isdigit():
++                self.trigger('remote.open', key=key, play=bool(args.get('play', True)),
++                             from_start=bool(args.get('from_start', False)))
++            else:
++                LOG("CouchOS: ignoring open without a numeric key: {}".format(data))
++            return
++
+         if sender == 'script.plexmod' and method.endswith('RESTORE'):
+             from .windows import kodigui, windowutils
+
+--- a/lib/windows/home.py
++++ b/lib/windows/home.py
+@@ -2323,6 +2323,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
+         util.MONITOR.on('dpms.deactivated', self.refreshLastSection)
+         util.MONITOR.on('system.sleep', self.disableUpdates)
+         util.MONITOR.on('system.wakeup', self.onWake)
++        util.MONITOR.on('remote.open', self.onRemoteOpen)
+
+     def unhookSignals(self):
+         plexapp.SERVERMANAGER.off('new:server', self.onNewServer)
+@@ -2355,6 +2356,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
+         util.MONITOR.off('dpms.deactivated', self.refreshLastSection)
+         util.MONITOR.off('system.sleep', self.disableUpdates)
+         util.MONITOR.off('system.wakeup', self.onWake)
++        util.MONITOR.off('remote.open', self.onRemoteOpen)
+
+
+     def updateSourceChanged(self, value, **kwargs):
+@@ -2909,6 +2911,28 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
+         # so there's nothing to draw. Let background tasks call showHubs() via
+         # sectionHubsCallback when data actually arrives.
+
++    def onRemoteOpen(self, key=None, play=True, from_start=False, **kwargs):
++        """CouchOS: open a Plex item sent from a phone, the way a click on a
++        hub item does (same opener, same playback/transcode/resume handling).
++        Movies and episodes start playing; shows, seasons and the rest open
++        their screen. The item opens on top of whatever window is showing."""
++        if self._shuttingDown or self._restarting:
++            return
++        util.LOG("CouchOS: remote open {0} (play={1}, from_start={2})", key, play, from_start)
++        try:
++            extra = {'start_over': True} if from_start else {}
++            if play:
++                extra.update(auto_play=True, dialog_props=self.carriedProps)
++            command = opener.open(key, **extra)
++            if command == "NODATA":
++                raise util.NoDataException
++            if command:
++                self.processCommand(command)
++        except util.NoDataException:
++            util.ERROR("No data - deleted or server disconnected?", notify=True, time_ms=5000)
++        except Exception:
++            util.ERROR()
++
+     def disableUpdates(self, *args, **kwargs):
+         util.LOG("Sleep event, stopping updates")
+         self._ignoreTick = True

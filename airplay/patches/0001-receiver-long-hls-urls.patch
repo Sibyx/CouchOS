@@ -1,0 +1,34 @@
+diff --git a/src/receiver/receiver.c b/src/receiver/receiver.c
+index 8e76775..339bf51 100644
+--- a/src/receiver/receiver.c
++++ b/src/receiver/receiver.c
+@@ -2436,8 +2436,19 @@ static void cb_on_video_play(void* cls, const char* location, const float start_
+   if (!encoded)
+     return;
+ 
+-  char arg[2048];
+-  snprintf(arg, sizeof(arg), "%s %.3f", encoded, start_position);
++  /*
++   * Sized to the URL: a Plex transcode playlist URL runs to ~1700 characters
++   * (~2300 base64), and a fixed 2048 cut it off, so the service could not
++   * decode it and dropped the handoff without a word.
++   */
++  const size_t arg_len = strlen(encoded) + 32;
++  char* arg = malloc(arg_len);
++  if (!arg)
++  {
++    free(encoded);
++    return;
++  }
++  snprintf(arg, arg_len, "%s %.3f", encoded, start_position);
+   free(encoded);
+ 
+   pthread_mutex_lock(&g_lock);
+@@ -2464,6 +2475,7 @@ static void cb_on_video_play(void* cls, const char* location, const float start_
+   pthread_mutex_unlock(&g_lock);
+ 
+   emit_event_arg("HLS", arg);
++  free(arg);
+ }
+ 
+ static void cb_on_video_scrub(void* cls, const float position)

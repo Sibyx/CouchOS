@@ -1,0 +1,5 @@
+{{ {
+  "bind": "0.0.0.0:" ~ dashd_port,
+  "kodi_rpc": "http://127.0.0.1:" ~ kodi_webserver_port ~ "/jsonrpc",
+  "widgets": dashd_widgets,
+} | to_nice_json(ensure_ascii=false) }}

@@ -8,6 +8,10 @@
 	handle /api/* {
 		reverse_proxy 127.0.0.1:{{ couchd_port }}
 	}
+	# dashd: dashboard widgets (same origin for the web page)
+	handle /v1/* {
+		reverse_proxy 127.0.0.1:{{ dashd_port }}
+	}
 	handle {
 		root * /srv
 		file_server

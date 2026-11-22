@@ -1,6 +1,10 @@
-# Build output (images from image/build.sh, UxPlay bundle from uxplay/build.sh)
+# Build output (images from image/build.sh, UxPlay bundle from uxplay/build.sh,
+# the Kodi AirPlay add-on from airplay/build.sh, dashd from dashd/build.sh)
 /out/
 /uxplay/dist/
+/airplay/dist/
+/dashd/dist/
+/dashd/target/
 
 # pi-gen lives in ~/.cache/couchos; never vendor it here
 /pi-gen/

@@ -25,10 +25,13 @@ storage_spindown_seconds: 600
 # --- Kodi --------------------------------------------------------------------
 # Raspberry Pi archive build (Pi-patched V4L2/DRM-PRIME decode).
 # On 2026-11-21 the archive had kodi 21.3+rpt3 and kodi22 22.0~beta2+rpt1.
-# To try Kodi 22: kodi_package: kodi22, and point kodi_binary at its launcher
-# (check on the Pi with: dpkg -L kodi22 | grep bin/).
-kodi_package: kodi
+# Kodi 22 because the AirPlay add-on (below) targets it. kodi22 conflicts with
+# and replaces kodi (same /usr/bin/kodi), so apt swaps them.
+# Back to 21: kodi_package: kodi, airplay_receiver: uxplay, and restore
+# ~/.kodi from kodi_backup (Kodi 22 upgrades the databases one way).
+kodi_package: kodi22
 kodi_binary: /usr/bin/kodi
+kodi_backup: "/home/{{ tv_user }}/kodi21-backup.tar.gz"
 kodi_audio_backend: pulseaudio   # PipeWire's pulse server
 kodi_webserver_port: 8080
 
@@ -56,14 +59,46 @@ kodi_settings:
   videoplayer.useprimedecoder: true
   videoplayer.useprimerenderer: 0
   videoscreen.limitguisize: 3
+  # Idle: the dashboard (dashboard_enabled), else black. Both cost almost
+  # nothing: "dim" would keep rendering the whole GUI underneath, the
+  # dashboard redraws only its clock once a minute. Minutes.
+  # couchd's POST /api/dashboard switches this at runtime; a playbook run
+  # puts it back to dashboard_enabled.
+  screensaver.mode: "{{ 'screensaver.couchos.dashboard' if dashboard_enabled else 'screensaver.xbmc.builtin.black' }}"
+  screensaver.time: 5
+  # Kodi's own AirPlay (audio-only since iOS 9) cannot run beside
+  # inputstream.airplay or UxPlay: same deviceid, a sender may pick it.
+  services.airplay: false
+  # System.FriendlyName: the name the AirPlay add-on advertises (and Kodi's
+  # own zeroconf/UPnP name).
+  services.devicename: "{{ airplay_name }}"
 pm4k_settings: "/home/{{ tv_user }}/.kodi/userdata/addon_data/script.plexmod/settings.xml"
+# Merged into PM4K's settings file (it also holds the Plex sign-in).
+pm4k_enforced:
+  # "Start Plex On Kodi Startup": Plex opens at boot and owns the screen.
+  kiosk.mode: true
+  # Back on Plex's home never opens "Confirm Exit" (Exit/Minimize/Cancel): on
+  # an appliance there is nothing to exit to, and the modal used to sit on top
+  # of the AirPlay video.
+  disable_exit_on_back: true
 
 # PM4K (PlexMod for Kodi). The upstream tags are stale; this is the
 # develop_kodi21 head on 2026-11-07 (addon version 1.14.1-beta1).
 pm4k_ref: 8e725ffaa4661770aaf32da01f6b1b534d59e9d0
 kodi_addon_repo: https://mirrors.kodi.tv/addons/omega
 
-# --- AirPlay (UxPlay) --------------------------------------------------------
+# --- AirPlay -------------------------------------------------------------------
+# Which receiver runs (only one may: both answer on port 7000 as "CouchOS"):
+#  kodi:   popcornmix's inputstream.airplay, built by airplay/build.sh. Inside
+#          Kodi 22: mirroring, video from apps (hands Kodi a playlist), and
+#          audio, all through Kodi's own player and hardware decode.
+#  uxplay: UxPlay + airplay-bridge + couchd handing the stream to Kodi
+#          (mirroring only; app video arrives as audio; no photos).
+airplay_receiver: kodi
+airplay_addon_ref: c2af2d9
+airplay_addon_dist: "{{ playbook_dir }}/../airplay/dist/inputstream.airplay-{{ airplay_addon_ref }}-kodi22-arm64"
+
+# --- AirPlay (UxPlay, airplay_receiver: uxplay) ------------------------------
 uxplay_version: 1.73.7
 airplay_name: CouchOS
 # -p: fixed legacy ports (TCP 7000,7001,7100 / UDP 6000,6001,7011)
@@ -79,8 +114,31 @@ uxplay_args: >-
   -vrtp "config-interval=1 ! udpsink host=127.0.0.1 port=5000"
   -artp "pt=96 ! udpsink host=127.0.0.1 port=5002"
 
+# --- TV dashboard (dashd + screensaver.couchos.dashboard) ----------------------
+# The idle screen: clock, weather, the frog of the day. dashd/build.sh builds
+# the binary. The Kodi add-on finds dashd's port in its config file.
+dashboard_enabled: true
+dashd_version: 0.1.0
+dashd_dist: "{{ playbook_dir }}/../dashd/dist/dashd-{{ dashd_version }}-trixie-arm64"
+dashd_port: 8766
+# Widgets in display order: {id, kind, params}. Kinds: clock, weather, frog.
+dashd_widgets:
+  - {id: clock, kind: clock, params: {timezone: Europe/Bratislava}}
+  - id: weather
+    kind: weather
+    params: {place: "Bratislava · Staré Mesto", latitude: 48.1437, longitude: 17.1066, timezone: Europe/Bratislava}
+  - {id: frog, kind: frog}
+
 # --- control plane -----------------------------------------------------------
 couchd_port: 8765
+# Plex artwork cached on the SD card for the phone app (MB). Every library's
+# list artwork is about 2-3 GB; detail sizes add to it as they're viewed.
+couchd_art_cache_mb: 16384
+# Free space the SD card always keeps (MB): below it couchd drops the oldest
+# artwork and stops saving new artwork until there's room again.
+couchd_disk_reserve_mb: 2048
+# systemd journal cap on the SD card.
+journal_max_use: 200M
 # Shown on the dashboard. An iOS app can't be installed from a plain link:
 # put a TestFlight invite here once there is one.
 app_build_url: ""

@@ -10,6 +10,49 @@
     state: present
     install_recommends: false
 
+# Same file the image ships, so a running Pi gets config.txt fixes too.
+# The boot partition is FAT: no backup (Ansible's backup name has ':' in it)
+# and no mode (FAT has no permissions).
+- name: Firmware config (config.txt)
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../image/stage-couchos/03-boot/files/config.txt"
+    dest: /boot/firmware/config.txt
+  register: firmware_config
+
+- name: Firmware config needs a reboot
+  ansible.builtin.debug:
+    msg: "config.txt changed: reboot the Pi to apply it (sudo systemctl reboot)."
+  when: firmware_config.changed
+
+# The journal otherwise grows to 10 % of the SD card.
+- name: Journal drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/journald.conf.d
+    state: directory
+    mode: "0755"
+
+- name: Cap the systemd journal
+  ansible.builtin.copy:
+    dest: /etc/systemd/journald.conf.d/90-couchos.conf
+    content: |
+      [Journal]
+      SystemMaxUse={{ journal_max_use }}
+      SystemKeepFree=1G
+    mode: "0644"
+  register: journald_conf
+
+- name: Apply the journal cap
+  ansible.builtin.systemd_service:
+    name: systemd-journald
+    state: restarted
+  when: journald_conf.changed
+
+# Downloaded .deb files are never needed again once installed.
+- name: Drop cached packages
+  ansible.builtin.apt:
+    autoclean: true
+    clean: true
+
 - name: Kernel and network tunables
   ansible.posix.sysctl:
     name: "{{ item.name }}"

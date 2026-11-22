@@ -1,21 +1,25 @@
 #!/usr/bin/env python3
 """Install PM4K (script.plexmod) and its dependencies into a Kodi profile.
 
-PM4K comes from a pinned GitHub commit; its dependencies come from the official
-Kodi add-on repository. Kodi keeps unknown local add-ons disabled, so the
-`enable` step turns them on through JSON-RPC once Kodi is running.
+PM4K comes from a pinned GitHub commit, with CouchOS's patches applied on top
+(`patch -p1`, in name order); its dependencies come from the official Kodi
+add-on repository. Kodi keeps unknown local add-ons disabled, so the `enable`
+step turns them on through JSON-RPC once Kodi is running.
 
-  kodi-addons.py install --addons-dir ~/.kodi/addons --repo URL --pm4k-ref SHA
+  kodi-addons.py install --addons-dir ~/.kodi/addons --repo URL --pm4k-ref SHA [--patches DIR]
   kodi-addons.py enable  --addons-dir ~/.kodi/addons --jsonrpc URL [--extra ID ...]
 
-Prints one JSON line: {"changed": bool, "order": [...]}. Standard library only.
+Prints one JSON line: {"changed": bool, "order": [...]}. Standard library only
+(plus the `patch` tool when there are patches).
 """
 
 import argparse
 import gzip
+import hashlib
 import io
 import json
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -62,6 +66,37 @@ def extract_single_dir(data: bytes, dest: Path) -> None:
         shutil.move(str(top), dest)
 
 
+def patch_files(patches_dir: str | None) -> list[Path]:
+    return sorted(Path(patches_dir).glob("*.patch")) if patches_dir else []
+
+
+def pm4k_version(ref: str, patches: list[Path]) -> str:
+    """The marker content: the commit plus a hash of the patches, so editing a
+    patch reinstalls PM4K from a clean copy."""
+    if not patches:
+        return ref
+    digest = hashlib.sha256(b"".join(p.name.encode() + b"\0" + p.read_bytes() for p in patches)).hexdigest()
+    return f"{ref}+{digest[:12]}"
+
+
+def install_pm4k(dest: Path, ref: str, patches: list[Path]) -> None:
+    # Patch a copy beside the add-on, then swap it in: a patch that no longer
+    # applies leaves the installed PM4K untouched.
+    staging = dest.with_name(dest.name + ".couchos-new")
+    extract_single_dir(fetch(PM4K_ZIP.format(ref=ref)), staging)
+    for patch in patches:
+        result = subprocess.run(
+            ["patch", "-p1", "--forward", "--batch", "--no-backup-if-mismatch", "-d", str(staging), "-i", str(patch)],
+            capture_output=True, text=True, check=False,
+        )
+        if result.returncode != 0:
+            shutil.rmtree(staging)
+            raise SystemExit(f"{patch.name} does not apply to PM4K {ref}:\n{result.stdout}{result.stderr}")
+    if dest.exists():
+        shutil.rmtree(dest)
+    staging.rename(dest)
+
+
 def install(args: argparse.Namespace) -> dict:
     addons = Path(args.addons_dir).expanduser()
     addons.mkdir(parents=True, exist_ok=True)
@@ -69,9 +104,11 @@ def install(args: argparse.Namespace) -> dict:
 
     pm4k = addons / PM4K_ID
     marker = pm4k / REF_MARKER
-    if not marker.exists() or marker.read_text().strip() != args.pm4k_ref:
-        extract_single_dir(fetch(PM4K_ZIP.format(ref=args.pm4k_ref)), pm4k)
-        marker.write_text(args.pm4k_ref + "\n")
+    patches = patch_files(args.patches)
+    version = pm4k_version(args.pm4k_ref, patches)
+    if not marker.exists() or marker.read_text().strip() != version:
+        install_pm4k(pm4k, args.pm4k_ref, patches)
+        marker.write_text(version + "\n")
         changed = True
 
     index = None
@@ -154,6 +191,7 @@ def main() -> None:
     p_install.add_argument("--addons-dir", required=True)
     p_install.add_argument("--repo", required=True)
     p_install.add_argument("--pm4k-ref", required=True)
+    p_install.add_argument("--patches", help="directory of *.patch files applied to PM4K (patch -p1)")
     p_enable = sub.add_parser("enable")
     p_enable.add_argument("--addons-dir", required=True)
     p_enable.add_argument("--jsonrpc", required=True)

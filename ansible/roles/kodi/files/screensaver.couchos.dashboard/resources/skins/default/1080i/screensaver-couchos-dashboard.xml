@@ -1,0 +1,215 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- CouchOS dashboard, 1920x1080. Fonts are Estuary's (Kodi's default skin),
+     used at their native size: scaling a font with a zoom animation scales
+     its glyph texture, which blurs it and redraws the label every frame.
+       WeatherTemp  Noto Sans bold 120     font37 / font27  Noto Sans 37 / 27
+       font12 / font10  Noto Sans 25 / 23
+     Data: Window.Property(<widget id>.<key>) from dashd's /v1/views/tv.
+     Weather icons: Kodi's stock set, resource.images.weathericons.default.
+
+     Careful with $INFO[info,prefix,suffix]: commas separate its parts, so
+     no comma may appear inside one (System.Date(DDDD, D MMMM) breaks).
+
+     Colours: FFF2F2F2 primary, FFB8B8B8 secondary, FF8A8A8A labels,
+     FF7FB2E5 precipitation. -->
+<window>
+    <defaultcontrol>-</defaultcontrol>
+    <animation effect="fade" time="500">WindowOpen</animation>
+    <animation effect="fade" time="250">WindowClose</animation>
+    <controls>
+        <control type="image">
+            <left>0</left><top>0</top><width>1920</width><height>1080</height>
+            <texture colordiffuse="FF000000">white.png</texture>
+        </control>
+
+        <!-- Everything moves together a few pixels every few minutes (burn-in). -->
+        <control type="group" id="100">
+            <left>0</left><top>0</top>
+
+            <!-- ============ left: time, date, weather ============ -->
+            <control type="label">
+                <left>136</left><top>70</top><width>900</width><height>140</height>
+                <font>WeatherTemp</font><textcolor>FFF2F2F2</textcolor>
+                <label>$INFO[System.Time(HH:mm)]</label>
+            </control>
+            <control type="label">
+                <left>142</left><top>205</top><width>900</width><height>50</height>
+                <font>font37</font><textcolor>FFB8B8B8</textcolor>
+                <label>$INFO[System.Date(DDDD)] $INFO[System.Date(D MMMM)]</label>
+            </control>
+
+            <control type="group">
+                <left>142</left><top>290</top>
+                <visible>!String.IsEmpty(Window.Property(weather.temp))</visible>
+
+                <!-- now -->
+                <control type="label">
+                    <left>0</left><top>0</top><width>900</width><height>28</height>
+                    <font>font12</font><textcolor>FF8A8A8A</textcolor>
+                    <label>[UPPERCASE]$INFO[Window.Property(weather.place)][/UPPERCASE]</label>
+                </control>
+                <control type="image">
+                    <left>-10</left><top>34</top><width>130</width><height>130</height>
+                    <aspectratio>keep</aspectratio>
+                    <texture>$INFO[Window.Property(weather.icon),resource://resource.images.weathericons.default/,.png]</texture>
+                </control>
+                <control type="label">
+                    <left>136</left><top>34</top><width>260</width><height>130</height>
+                    <aligny>center</aligny>
+                    <font>WeatherTemp</font><textcolor>FFF2F2F2</textcolor>
+                    <label>$INFO[Window.Property(weather.temp)]</label>
+                </control>
+                <control type="label">
+                    <left>400</left><top>56</top><width>500</width><height>50</height>
+                    <font>font37</font><textcolor>FFF2F2F2</textcolor>
+                    <label>$INFO[Window.Property(weather.condition)]</label>
+                </control>
+                <control type="label">
+                    <left>400</left><top>104</top><width>500</width><height>38</height>
+                    <font>font27</font><textcolor>FFB8B8B8</textcolor>
+                    <label>$INFO[Window.Property(weather.summary)]</label>
+                </control>
+                <control type="label">
+                    <left>0</left><top>172</top><width>900</width><height>38</height>
+                    <font>font27</font><textcolor>FF8A8A8A</textcolor>
+                    <label>$INFO[Window.Property(weather.detail)]</label>
+                </control>
+
+                <!-- Columns written out: a script window cannot use skin includes.
+                     Same controls per column, only the index and left differ. -->
+                <!-- next twelve hours, every two: 6 x 150 -->
+                <control type="label">
+                    <left>0</left><top>232</top><width>900</width><height>28</height>
+                    <font>font12</font><textcolor>FF8A8A8A</textcolor>
+                    <label>NEXT HOURS</label>
+                </control>
+                <control type="group"><left>0</left><top>266</top>
+                    <control type="label"><left>0</left><top>0</top><width>150</width><height>34</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.hour1.time)]</label></control>
+                    <control type="image"><left>43</left><top>34</top><width>64</width><height>64</height><aspectratio>keep</aspectratio><texture>$INFO[Window.Property(weather.hour1.icon),resource://resource.images.weathericons.default/,.png]</texture></control>
+                    <control type="label"><left>0</left><top>100</top><width>150</width><height>46</height><align>center</align><font>font37</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(weather.hour1.temp)]</label></control>
+                    <control type="label"><left>0</left><top>146</top><width>150</width><height>30</height><align>center</align><font>font12</font><textcolor>FF7FB2E5</textcolor><label>$INFO[Window.Property(weather.hour1.rain)]</label></control>
+                </control>
+                <control type="group"><left>150</left><top>266</top>
+                    <control type="label"><left>0</left><top>0</top><width>150</width><height>34</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.hour2.time)]</label></control>
+                    <control type="image"><left>43</left><top>34</top><width>64</width><height>64</height><aspectratio>keep</aspectratio><texture>$INFO[Window.Property(weather.hour2.icon),resource://resource.images.weathericons.default/,.png]</texture></control>
+                    <control type="label"><left>0</left><top>100</top><width>150</width><height>46</height><align>center</align><font>font37</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(weather.hour2.temp)]</label></control>
+                    <control type="label"><left>0</left><top>146</top><width>150</width><height>30</height><align>center</align><font>font12</font><textcolor>FF7FB2E5</textcolor><label>$INFO[Window.Property(weather.hour2.rain)]</label></control>
+                </control>
+                <control type="group"><left>300</left><top>266</top>
+                    <control type="label"><left>0</left><top>0</top><width>150</width><height>34</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.hour3.time)]</label></control>
+                    <control type="image"><left>43</left><top>34</top><width>64</width><height>64</height><aspectratio>keep</aspectratio><texture>$INFO[Window.Property(weather.hour3.icon),resource://resource.images.weathericons.default/,.png]</texture></control>
+                    <control type="label"><left>0</left><top>100</top><width>150</width><height>46</height><align>center</align><font>font37</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(weather.hour3.temp)]</label></control>
+                    <control type="label"><left>0</left><top>146</top><width>150</width><height>30</height><align>center</align><font>font12</font><textcolor>FF7FB2E5</textcolor><label>$INFO[Window.Property(weather.hour3.rain)]</label></control>
+                </control>
+                <control type="group"><left>450</left><top>266</top>
+                    <control type="label"><left>0</left><top>0</top><width>150</width><height>34</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.hour4.time)]</label></control>
+                    <control type="image"><left>43</left><top>34</top><width>64</width><height>64</height><aspectratio>keep</aspectratio><texture>$INFO[Window.Property(weather.hour4.icon),resource://resource.images.weathericons.default/,.png]</texture></control>
+                    <control type="label"><left>0</left><top>100</top><width>150</width><height>46</height><align>center</align><font>font37</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(weather.hour4.temp)]</label></control>
+                    <control type="label"><left>0</left><top>146</top><width>150</width><height>30</height><align>center</align><font>font12</font><textcolor>FF7FB2E5</textcolor><label>$INFO[Window.Property(weather.hour4.rain)]</label></control>
+                </control>
+                <control type="group"><left>600</left><top>266</top>
+                    <control type="label"><left>0</left><top>0</top><width>150</width><height>34</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.hour5.time)]</label></control>
+                    <control type="image"><left>43</left><top>34</top><width>64</width><height>64</height><aspectratio>keep</aspectratio><texture>$INFO[Window.Property(weather.hour5.icon),resource://resource.images.weathericons.default/,.png]</texture></control>
+                    <control type="label"><left>0</left><top>100</top><width>150</width><height>46</height><align>center</align><font>font37</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(weather.hour5.temp)]</label></control>
+                    <control type="label"><left>0</left><top>146</top><width>150</width><height>30</height><align>center</align><font>font12</font><textcolor>FF7FB2E5</textcolor><label>$INFO[Window.Property(weather.hour5.rain)]</label></control>
+                </control>
+                <control type="group"><left>750</left><top>266</top>
+                    <control type="label"><left>0</left><top>0</top><width>150</width><height>34</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.hour6.time)]</label></control>
+                    <control type="image"><left>43</left><top>34</top><width>64</width><height>64</height><aspectratio>keep</aspectratio><texture>$INFO[Window.Property(weather.hour6.icon),resource://resource.images.weathericons.default/,.png]</texture></control>
+                    <control type="label"><left>0</left><top>100</top><width>150</width><height>46</height><align>center</align><font>font37</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(weather.hour6.temp)]</label></control>
+                    <control type="label"><left>0</left><top>146</top><width>150</width><height>30</height><align>center</align><font>font12</font><textcolor>FF7FB2E5</textcolor><label>$INFO[Window.Property(weather.hour6.rain)]</label></control>
+                </control>
+
+                <!-- next five days: 5 x 180, high left of centre, low right -->
+                <control type="label">
+                    <left>0</left><top>470</top><width>900</width><height>28</height>
+                    <font>font12</font><textcolor>FF8A8A8A</textcolor>
+                    <label>NEXT DAYS</label>
+                </control>
+                <control type="group"><left>0</left><top>504</top>
+                    <control type="label"><left>0</left><top>0</top><width>180</width><height>34</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.day1.name)]</label></control>
+                    <control type="image"><left>58</left><top>34</top><width>64</width><height>64</height><aspectratio>keep</aspectratio><texture>$INFO[Window.Property(weather.day1.icon),resource://resource.images.weathericons.default/,.png]</texture></control>
+                    <control type="label"><left>0</left><top>100</top><width>84</width><height>46</height><align>right</align><font>font37</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(weather.day1.high)]</label></control>
+                    <control type="label"><left>96</left><top>106</top><width>84</width><height>40</height><font>font27</font><textcolor>FF8A8A8A</textcolor><label>$INFO[Window.Property(weather.day1.low)]</label></control>
+                    <control type="label"><left>0</left><top>146</top><width>180</width><height>30</height><align>center</align><font>font12</font><textcolor>FF7FB2E5</textcolor><label>$INFO[Window.Property(weather.day1.rain)]</label></control>
+                </control>
+                <control type="group"><left>180</left><top>504</top>
+                    <control type="label"><left>0</left><top>0</top><width>180</width><height>34</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.day2.name)]</label></control>
+                    <control type="image"><left>58</left><top>34</top><width>64</width><height>64</height><aspectratio>keep</aspectratio><texture>$INFO[Window.Property(weather.day2.icon),resource://resource.images.weathericons.default/,.png]</texture></control>
+                    <control type="label"><left>0</left><top>100</top><width>84</width><height>46</height><align>right</align><font>font37</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(weather.day2.high)]</label></control>
+                    <control type="label"><left>96</left><top>106</top><width>84</width><height>40</height><font>font27</font><textcolor>FF8A8A8A</textcolor><label>$INFO[Window.Property(weather.day2.low)]</label></control>
+                    <control type="label"><left>0</left><top>146</top><width>180</width><height>30</height><align>center</align><font>font12</font><textcolor>FF7FB2E5</textcolor><label>$INFO[Window.Property(weather.day2.rain)]</label></control>
+                </control>
+                <control type="group"><left>360</left><top>504</top>
+                    <control type="label"><left>0</left><top>0</top><width>180</width><height>34</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.day3.name)]</label></control>
+                    <control type="image"><left>58</left><top>34</top><width>64</width><height>64</height><aspectratio>keep</aspectratio><texture>$INFO[Window.Property(weather.day3.icon),resource://resource.images.weathericons.default/,.png]</texture></control>
+                    <control type="label"><left>0</left><top>100</top><width>84</width><height>46</height><align>right</align><font>font37</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(weather.day3.high)]</label></control>
+                    <control type="label"><left>96</left><top>106</top><width>84</width><height>40</height><font>font27</font><textcolor>FF8A8A8A</textcolor><label>$INFO[Window.Property(weather.day3.low)]</label></control>
+                    <control type="label"><left>0</left><top>146</top><width>180</width><height>30</height><align>center</align><font>font12</font><textcolor>FF7FB2E5</textcolor><label>$INFO[Window.Property(weather.day3.rain)]</label></control>
+                </control>
+                <control type="group"><left>540</left><top>504</top>
+                    <control type="label"><left>0</left><top>0</top><width>180</width><height>34</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.day4.name)]</label></control>
+                    <control type="image"><left>58</left><top>34</top><width>64</width><height>64</height><aspectratio>keep</aspectratio><texture>$INFO[Window.Property(weather.day4.icon),resource://resource.images.weathericons.default/,.png]</texture></control>
+                    <control type="label"><left>0</left><top>100</top><width>84</width><height>46</height><align>right</align><font>font37</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(weather.day4.high)]</label></control>
+                    <control type="label"><left>96</left><top>106</top><width>84</width><height>40</height><font>font27</font><textcolor>FF8A8A8A</textcolor><label>$INFO[Window.Property(weather.day4.low)]</label></control>
+                    <control type="label"><left>0</left><top>146</top><width>180</width><height>30</height><align>center</align><font>font12</font><textcolor>FF7FB2E5</textcolor><label>$INFO[Window.Property(weather.day4.rain)]</label></control>
+                </control>
+                <control type="group"><left>720</left><top>504</top>
+                    <control type="label"><left>0</left><top>0</top><width>180</width><height>34</height><align>center</align><font>font27</font><textcolor>FFB8B8B8</textcolor><label>$INFO[Window.Property(weather.day5.name)]</label></control>
+                    <control type="image"><left>58</left><top>34</top><width>64</width><height>64</height><aspectratio>keep</aspectratio><texture>$INFO[Window.Property(weather.day5.icon),resource://resource.images.weathericons.default/,.png]</texture></control>
+                    <control type="label"><left>0</left><top>100</top><width>84</width><height>46</height><align>right</align><font>font37</font><textcolor>FFF2F2F2</textcolor><label>$INFO[Window.Property(weather.day5.high)]</label></control>
+                    <control type="label"><left>96</left><top>106</top><width>84</width><height>40</height><font>font27</font><textcolor>FF8A8A8A</textcolor><label>$INFO[Window.Property(weather.day5.low)]</label></control>
+                    <control type="label"><left>0</left><top>146</top><width>180</width><height>30</height><align>center</align><font>font12</font><textcolor>FF7FB2E5</textcolor><label>$INFO[Window.Property(weather.day5.rain)]</label></control>
+                </control>
+            </control>
+
+            <!-- ============ right: the frog of the day ============ -->
+            <control type="group">
+                <left>1100</left><top>90</top>
+                <visible>!String.IsEmpty(Window.Property(frog.name))</visible>
+                <!-- 680x510: within Kodi's 540 px image texture limit
+                     (advancedsettings imageres), so no upscaling. -->
+                <control type="image">
+                    <left>0</left><top>0</top><width>680</width><height>510</height>
+                    <aspectratio>scale</aspectratio>
+                    <fadetime>400</fadetime>
+                    <texture background="true">$INFO[Window.Property(frog.photo)]</texture>
+                </control>
+                <control type="label">
+                    <left>0</left><top>532</top><width>680</width><height>50</height>
+                    <font>font37</font><textcolor>FFF2F2F2</textcolor>
+                    <label>[I]$INFO[Window.Property(frog.name)][/I]</label>
+                </control>
+                <control type="label">
+                    <left>0</left><top>580</top><width>680</width><height>38</height>
+                    <font>font27</font><textcolor>FFB8B8B8</textcolor>
+                    <label>$INFO[Window.Property(frog.common)]</label>
+                </control>
+                <!-- the status value carries its own [COLOR] (IUCN colour) -->
+                <control type="label">
+                    <left>0</left><top>620</top><width>680</width><height>38</height>
+                    <font>font27</font><textcolor>FF8A8A8A</textcolor>
+                    <label>$INFO[Window.Property(frog.family)]$INFO[Window.Property(frog.status),   ·   ]</label>
+                </control>
+                <control type="textbox">
+                    <left>0</left><top>672</top><width>680</width><height>156</height>
+                    <font>font27</font><textcolor>FFB8B8B8</textcolor>
+                    <label>$INFO[Window.Property(frog.summary)]</label>
+                </control>
+                <control type="label">
+                    <left>0</left><top>852</top><width>680</width><height>28</height>
+                    <font>font10</font><textcolor>FF5A5A5A</textcolor>
+                    <label>$INFO[Window.Property(frog.attribution)]</label>
+                </control>
+            </control>
+
+            <!-- quiet notice when the data is old -->
+            <control type="label">
+                <left>1100</left><top>1006</top><width>680</width><height>28</height>
+                <font>font10</font><textcolor>FF5A5A5A</textcolor>
+                <label>Dashboard data is not updating</label>
+                <visible>String.IsEqual(Window.Property(offline),true) | String.IsEqual(Window.Property(weather.stale),true)</visible>
+            </control>
+        </control>
+    </controls>
+</window>

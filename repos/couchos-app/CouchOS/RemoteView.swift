@@ -9,7 +9,6 @@ struct RemoteView: View {
         VStack(spacing: 14) {
             header
             if model.airplayActive { airplayBanner } else { nowPlaying }
-            apps
             Touchpad()
             controls
             transport
@@ -32,6 +31,17 @@ struct RemoteView: View {
             Circle().fill(dotColor).frame(width: 8, height: 8)
             Text(connectionLabel).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
             Spacer()
+            Menu {
+                Section("Open on TV") {
+                    Button { model.showDashboard() } label: { Label("Dashboard", systemImage: "rectangle.3.group") }
+                    ForEach(TVApp.secondary) { app in
+                        Button { model.open(app) } label: { Label(app.title, systemImage: app.symbol) }
+                    }
+                }
+            } label: {
+                Image(systemName: "square.grid.2x2").font(.title3).frame(width: 44, height: 44)
+            }
+            .accessibilityLabel("Open on TV")
             Button { showMore = true } label: {
                 Image(systemName: "slider.horizontal.3").font(.title3).frame(width: 44, height: 44)
             }
@@ -39,22 +49,32 @@ struct RemoteView: View {
         }
     }
 
+    /// What plays, or else what the TV has selected, so the remote isn't blind.
     private var nowPlaying: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(model.nowPlaying?.title ?? "Plex").font(.headline).lineLimit(1)
-                Text(model.nowPlaying?.subtitle ?? " ").font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                if let playing = model.nowPlaying {
+                    Text(playing.title).font(.headline).lineLimit(1)
+                    Text(playing.subtitle.isEmpty ? " " : playing.subtitle)
+                        .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                } else {
+                    Text("On the TV").font(.caption).foregroundStyle(.secondary)
+                    Text(model.focus ?? "Plex").font(.headline).lineLimit(1)
+                        .contentTransition(.opacity)
+                }
             }
             Spacer()
         }
         .frame(minHeight: 48)
+        .animation(.easeOut(duration: 0.15), value: model.focus)
+        .accessibilityElement(children: .combine)
     }
 
     private var airplayBanner: some View {
         HStack(spacing: 12) {
-            Image(systemName: "airplayvideo").font(.title2)
+            Image(systemName: model.airplayKind == "audio" ? "airplayaudio" : "airplayvideo").font(.title2)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Screen sharing").font(.headline).lineLimit(1)
+                Text(airplayTitle).font(.headline).lineLimit(1)
                 Text("Stop to return to Plex").font(.subheadline).opacity(0.8).lineLimit(1)
             }
             Spacer()
@@ -68,28 +88,19 @@ struct RemoteView: View {
         .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.orange))
     }
 
-    private var apps: some View {
-        HStack(spacing: 8) {
-            ForEach(TVApp.allCases) { app in
-                Button { model.open(app) } label: {
-                    VStack(spacing: 4) {
-                        Image(systemName: app.symbol).font(.title3)
-                        Text(app.title).font(.caption2)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .foregroundStyle(.white)
-                    .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(white: 0.15)))
-                }
-                .buttonStyle(PressStyle())
-                .accessibilityLabel("Open \(app.title)")
-            }
+    private var airplayTitle: String {
+        switch model.airplayKind {
+        case "audio": "AirPlay music"
+        case "video": "AirPlay video"
+        default: "Screen sharing"
         }
     }
 
     private var controls: some View {
         HStack(spacing: 12) {
             RemoteButton(symbol: "arrow.uturn.backward", label: "Back") { model.press(.back) }
-            RemoteButton(symbol: "house", label: "Home") { model.press(.home) }
+            // Home is Plex (the TV's home screen), not Kodi's own home.
+            RemoteButton(symbol: "house", label: "Home (Plex)") { model.goHome() }
             RemoteButton(symbol: "ellipsis", label: "Menu") { model.press(.menu) }
             RemoteButton(symbol: "keyboard", label: "Keyboard") {
                 model.keyboard = AppModel.KeyboardRequest(title: "Type", text: "")

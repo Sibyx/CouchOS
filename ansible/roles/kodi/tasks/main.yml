@@ -142,6 +142,7 @@
 
 # CouchOS's changes to PM4K (pm4k-patches/*.patch, applied in name order):
 # 0001 lets couchd open a Plex item picked on the phone.
+# 0002 restarts a transcode resumed after a long pause (else it ends).
 - name: patch (applies the PM4K patches)
   ansible.builtin.apt:
     name: patch

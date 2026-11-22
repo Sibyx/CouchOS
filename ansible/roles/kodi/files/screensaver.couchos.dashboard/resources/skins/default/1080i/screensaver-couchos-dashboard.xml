@@ -53,9 +53,14 @@
             <texture colordiffuse="FF000000">white.png</texture>
         </control>
 
-        <!-- Everything moves together a few pixels every few minutes (burn-in). -->
+        <!-- Everything moves together a few pixels every few minutes (burn-in).
+             The "full" layout; dashd's time-of-day mode (widget "mode",
+             kind daypart) can switch to "clock" (below) and lay a veil over
+             the screen to dim it. -->
         <control type="group" id="100">
             <left>0</left><top>0</top>
+            <visible>!String.IsEqual(Window.Property(mode.layout),clock)</visible>
+            <animation effect="fade" time="1500">VisibleChange</animation>
 
             <!-- ================= left: time, date, today ================= -->
             <control type="label">
@@ -506,6 +511,30 @@
                 <label>Dashboard data is not updating</label>
                 <visible>String.IsEqual(Window.Property(offline),true) | String.IsEqual(Window.Property(weather.stale),true)</visible>
             </control>
+        </control>
+
+        <!-- The "clock" layout (night): only the time, in the middle. A
+             still clock all night is the worst case for burn-in, so this
+             group wanders far (dashboard.py CLOCK_SHIFTS), not a few pixels. -->
+        <control type="group" id="101">
+            <left>0</left><top>0</top>
+            <visible>String.IsEqual(Window.Property(mode.layout),clock)</visible>
+            <animation effect="fade" time="1500">VisibleChange</animation>
+            <control type="label">
+                <left>660</left><top>465</top><width>600</width><height>150</height>
+                <align>center</align><aligny>center</aligny>
+                <font>WeatherTemp</font><textcolor>FFB8B8B8</textcolor>
+                <label>$INFO[System.Time(HH:mm)]</label>
+            </control>
+        </control>
+
+        <!-- The veil: dims everything (and warms it with a tint), as
+             "AARRGGBB" from dashd. Over both layouts, never drifting. -->
+        <control type="image">
+            <left>0</left><top>0</top><width>1920</width><height>1080</height>
+            <texture colordiffuse="$INFO[Window.Property(mode.veil)]">white.png</texture>
+            <visible>!String.IsEmpty(Window.Property(mode.veil))</visible>
+            <animation effect="fade" time="1500">VisibleChange</animation>
         </control>
     </controls>
 </window>

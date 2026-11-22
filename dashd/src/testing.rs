@@ -49,23 +49,35 @@ impl Fetch for FakeFetch {
     }
 }
 
-pub struct FixedClock(pub Date);
+/// Stopped at one moment. `FixedClock::on(date)` is 23:00 CET that day;
+/// `FixedClock(LocalNow::at(...))` any other wall-clock time.
+pub struct FixedClock(pub LocalNow);
+
+impl FixedClock {
+    pub fn on(date: Date) -> Self {
+        Self(LocalNow::at(date, 23 * 3600, 3600))
+    }
+}
 
 impl Clock for FixedClock {
     fn now(&self) -> LocalNow {
-        LocalNow { unix: 1_795_000_000, date: self.0, seconds_to_midnight: 3600 }
+        self.0
     }
 }
 
 static DIRS: AtomicU32 = AtomicU32::new(0);
 
 pub fn ctx_at(fetch: FakeFetch, date: Date) -> Ctx {
+    ctx_with_clock(fetch, FixedClock::on(date))
+}
+
+pub fn ctx_with_clock(fetch: FakeFetch, clock: FixedClock) -> Ctx {
     let n = DIRS.fetch_add(1, Ordering::Relaxed);
     let root = std::env::temp_dir().join(format!("dashd-test-{}-{n}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     Ctx {
         http: Arc::new(fetch),
-        clock: Arc::new(FixedClock(date)),
+        clock: Arc::new(clock),
         assets: Arc::new(AssetStore::open(root.join("assets")).unwrap()),
         state: Arc::new(StateDir::open(root.join("state")).unwrap()),
     }

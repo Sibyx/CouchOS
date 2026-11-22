@@ -47,6 +47,8 @@ fn default_widgets() -> Vec<WidgetSpec> {
         {"id": "frog", "kind": "frog"},
         {"id": "board", "kind": "board"},
         {"id": "app", "kind": "qr"},
+        // The TV skin reads this one by its id: mode.layout, mode.veil.
+        {"id": "mode", "kind": "daypart"},
     ]))
     .expect("default widgets")
 }
@@ -86,7 +88,7 @@ mod tests {
     #[test]
     fn defaults_build_and_ids_are_checked() {
         let config = Config::load(None).unwrap();
-        assert_eq!(config.widgets.len(), 5);
+        assert_eq!(config.widgets.len(), 6);
         for w in &config.widgets {
             crate::widgets::build(&w.kind, &w.params).unwrap();
         }

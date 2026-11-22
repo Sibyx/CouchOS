@@ -258,6 +258,11 @@ def run(path, argv=(), session=None):
     main = session.window(MainWindow, MAIN_XML)
     main.setup(session)
     result = session.run_window(main)
+    if not main.inited:
+        # doModal returned without the window ever showing: Kodi refused it
+        # (a modal dialog was open), which it only logs at info level.
+        log("the catalog window did not open (dialog %d is up)" % xbmcgui.getCurrentWindowDialogId(),
+            xbmc.LOGWARNING)
     del main
     return result
 
@@ -287,9 +292,11 @@ class Screen(xbmcgui.WindowXML):
         self.api = session.api
         self.result = Result("back")
         self.started = False
+        self.inited = False  # onInit ran: the window really opened
 
     def remember_id(self):
         """Called first in onInit, while this window is the current one."""
+        self.inited = True
         try:
             self.session.window_ids.add(xbmcgui.getCurrentWindowId())
         except RuntimeError:

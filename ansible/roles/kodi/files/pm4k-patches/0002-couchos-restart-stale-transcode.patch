@@ -1,0 +1,59 @@
+CouchOS: resume a long-paused transcode by starting it afresh.
+
+The Pi 3 gets H.264 transcodes from a remote Plex server (allowed_codecs
+"[]"). Paused 10-20 minutes, the idle stream is gone on the server's side;
+on resume Kodi reconnects with a byte range, which a live transcode cannot
+serve, and the episode ends (2026-11-22, House S03E10: "Failure when
+receiving data from the peer(56)", then "Requested range was not delivered
+by the server(33)", then OnStop end=true and PM4K went on to the next
+episode). Paused longer than COUCHOS_STALE_PAUSE, the resume seeks to the
+paused position instead, which for a transcode starts a new session there
+(PM4K's own path for a rewind). Short pauses resume as before.
+
+--- a/lib/player.py
++++ b/lib/player.py
+@@ -6,6 +6,7 @@
+ import re
+ import os
+ import random
++import time
+ import uuid
+ from functools import wraps
+
+@@ -27,6 +28,10 @@
+ from six.moves import range
+
+ FIVE_MINUTES_MILLIS = 300000
++# CouchOS: a transcode paused longer than this (s) is restarted on resume.
++# 15 min is known to fail; where failing starts isn't, and a restart costs
++# only a few seconds of buffering.
++COUCHOS_STALE_PAUSE = 60
+
+ # Fastseek (CoreELEC p3i T4+ feature, coreelec.amlogic.fastseek, default ON)
+ # snaps playback to a keyframe instead of decoding to the exact target, so
+@@ -876,7 +881,16 @@
+             vpsc = True
+
+         util.DEBUG_LOG('SeekHandler: onPlayBackResumed, DP: {}, ignoring (VPSC): {}', self.isDirectPlay, vpsc)
+-        if not vpsc:
++        # CouchOS: a transcode paused for long is gone on the server's side
++        # (the idle connection is dropped); resuming reconnects with a byte
++        # range a live transcode can't serve, and the item ends. Start a
++        # fresh transcode at the paused position instead, as a rewind does.
++        paused_at, self._couchosPausedAt = getattr(self, '_couchosPausedAt', None), None
++        if not vpsc and self.isTranscoded and paused_at and time.time() - paused_at > COUCHOS_STALE_PAUSE:
++            util.LOG('CouchOS: transcode resumed after {0:.0f} s paused, restarting it at {1:.0f} s',
++                     time.time() - paused_at, self.trueTime)
++            self.seek(int(self.trueTime * 1000))
++        elif not vpsc:
+             self.updateNowPlaying()
+         if self.dialog:
+             self.dialog.onPlayBackResumed()
+@@ -1039,6 +1053,7 @@
+         if self.pausedForSeek:
+             return
+
++        self._couchosPausedAt = time.time()  # CouchOS: see onPlayBackResumed
+         vpsc = False
+         if self.dialog and self.dialog.videoPausedForAudioStreamChange:
+             vpsc = True

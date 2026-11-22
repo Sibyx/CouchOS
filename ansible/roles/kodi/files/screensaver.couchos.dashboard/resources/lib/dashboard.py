@@ -36,9 +36,13 @@ DASHD_CONFIG = "/opt/couchos/dashd/dashd.json"  # written by Ansible (dashd role
 ASSETS = "/v1/assets/"
 SKIN_XML = "screensaver-couchos-dashboard.xml"
 LAYOUT = 100  # the group holding everything (see the skin XML)
+CLOCK_LAYOUT = 101  # the night clock alone (mode.layout "clock")
 SHIFT_SECONDS = 240
 # Small drift around the design position, in pixels.
 SHIFTS = [(0, 0), (6, 4), (-4, 8), (8, -4), (-6, -6), (2, 10)]
+# The night clock wanders the screen instead: the time sits in a 600 x 150
+# box at (660, 465); these keep it inside 1920 x 1080 with a margin.
+CLOCK_SHIFTS = [(0, 0), (-480, -300), (420, 260), (-300, 320), (480, -280), (120, -360), (-120, 360)]
 SLIDE_SECONDS = 20
 # (slide, the view key that has to be set for it to show), in order.
 SLIDES = [("days", "weather.days"), ("app", "app.image")]
@@ -142,9 +146,10 @@ class Dashboard(xbmcgui.WindowXMLDialog):
             self.setProperty("slide", slide)
 
     def drift(self):
-        self._shift = (self._shift + 1) % len(SHIFTS)
+        self._shift += 1
         try:
-            self.getControl(LAYOUT).setPosition(*SHIFTS[self._shift])
+            self.getControl(LAYOUT).setPosition(*SHIFTS[self._shift % len(SHIFTS)])
+            self.getControl(CLOCK_LAYOUT).setPosition(*CLOCK_SHIFTS[self._shift % len(CLOCK_SHIFTS)])
         except RuntimeError:
             pass  # the window is closing
 

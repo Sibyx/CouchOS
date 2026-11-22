@@ -9,6 +9,8 @@ On the TV, a fixed grid on black, so nothing overlaps: three columns (time, date
 - the next days
 - the app's QR code
 
+By the time of day (widget `mode`, below), the TV dims after sunset and at night shows only the time, dimmed further.
+
 Whatever doesn't fit shares the last slot as a carousel, one slide every 20 s. With nothing on the board and nothing playing, the next days go wide (five days) beside the QR code. When AirPlay starts playing audio only, Kodi opens the dashboard by itself (`service.couchos`, `watch.py`).
 
 ```
@@ -31,6 +33,7 @@ Whatever doesn't fit shares the last slot as a carousel, one slide every 20 s. W
 | `notify.rs` | `Notifier` trait; `KodiNotifier` (JSON-RPC `NotifyAll`). More listeners (SSE, MQTT) plug in here |
 | `duck.rs` | The duck: config rules turn the weather into an outfit, then SVG blocks (sky, ground, rain/snow, the duck, each garment) are layered into one picture |
 | `svg.rs` | SVG → PNG (resvg; shapes only, no fonts). Kodi cannot draw SVG, so pictures are rasterized once per change and served as files named by their content hash |
+| `sun.rs` | Sunrise and sunset from latitude/longitude, computed locally (within a few minutes), for rules like `sunset+30` |
 | `net.rs`, `clock.rs`, `assets.rs`, `state.rs` | Ports to the outside world (HTTP out, local time, files served, JSON kept across restarts), each a small type or trait so widgets are testable with `testing.rs` fakes |
 | `http.rs` | The API (below). Routing is a plain function, tested without sockets |
 | `config.rs` | `dashd.json` (Ansible renders it from `dashd_widgets`); no file = the default Bratislava dashboard |
@@ -69,6 +72,12 @@ All JSON answers carry `ETag`. Send `If-None-Match` to get a 304. Through Caddy 
   ```
   The TV lists open items first, then done ones dimmed for `keep_done_hours` (12); the app keeps them until cleared. Text is one line per item (80 chars), the message up to 280 chars; on the TV, `[` `]` are shown as `(` `)` (Kodi markup) and emoji are dropped (Kodi's fonts have none). Params: `name` ("board"), `rows` (6), `keep_done_hours`, `message_hours` (0 = until replaced).
 - **qr**: a QR code drawn once at start, at a whole number of pixels per module so it stays crisp. The TV's `app` widget points at the app's TestFlight invite (`app_build_url` in Ansible); an empty `url` hides it. Params: `url`, `title`, `subtitle`.
+- **daypart** (id `mode`; the TV skin reads it by that id): the time of day. It names the **mode** the dashboard is in now, and the TV applies it. A mode is a bundle of display settings: `layout` (`full`, everything; `clock`, only the time, big, on black), `dim` (0–90 %, a veil over the whole screen) and `tint` (the veil's colour, `#RRGGBB`; warm = amber). Built in: `day` (full), `evening` (full, 20 % dimmer, a little warmer) and `night` (clock, 65 % dimmer). `modes` adds more or replaces one by name.
+  - Rules pick the mode. They run in order, a later rule that holds wins, and none holding means `default` (`day`). A rule is `{"mode": "night", "from": "23:00", "to": "06:30", "days": ["fri", "sat"]}`. Times are `HH:MM`, `sunrise`, `sunset`, or an offset like `sunset+30` or `sunrise-15` (minutes). A window past midnight belongs to the day it starts on. `days` are `mon`…`sun`, `weekdays` and `weekend`; none means every day. The defaults: evening from `sunset+30` to 23:00, night 23:00–06:30. `rules` replaces them; `extra_rules` is appended. Sun times come from `latitude` and `longitude`. A bad mode, time or day is a config error at start.
+  - dashd sleeps until the exact next change, and wakes at least hourly, which also absorbs DST. Unchanged output is dropped, so Kodi is only notified on a real change. The TV view is `mode.name`, `mode.layout` and `mode.veil` (`AARRGGBB` for the veil's colordiffuse, `""` = none). `data` adds `dim`, `tint`, `source` (`schedule` or `override`), `until` (unix seconds), `next`, and every mode.
+  - Set a mode from anywhere (a "Good night" button, couchd, a script): `POST /v1/widgets/mode {"op": "set", "mode": "night"}` holds until the schedule next changes; `"minutes": 90` sets a duration instead; `{"op": "auto"}` goes back to the schedule. The override is kept across restarts. Any POST also re-polls the widget, so an override ends on time.
+  - On the TV, the night clock wanders across the screen every 4 min (`CLOCK_SHIFTS` in `dashboard.py`), since a still clock all night is the worst case for burn-in. Layouts and the veil fade over 1.5 s.
+  - A new setting is a field on `Mode`, a view key in `output`, and its use in the skin; the skin contract test checks the keys. A new layout is a `Layout` variant plus a skin group shown for it.
 - **frog**: one of ~7,900 Anura species on iNaturalist each day. The pick is a hash of the local date, so it is the same frog after a restart. It shows the Latin name, common name, family, IUCN status, a Wikipedia summary and a CC-licensed photo with its attribution; photos without a licence are skipped. The TV gets a shorter summary: whole sentences up to about 260 characters (five lines), without the opening "… is a species of frog in the family …". `data.summary` keeps the full text. The pick and its photo are saved, so the day costs three API calls. Param: `taxon_id` (default 20979, Anura).
 
 ## Adding a widget
@@ -95,6 +104,13 @@ cargo run                 # serves the default dashboard on :8766 (DASHD_CONFIG=
 - **Air and sky**: air quality (Open-Meteo's air-quality API: PM2.5, pollen in spring), UV index, sunrise and sunset as a day arc, moon phase.
 - **From CouchOS itself**: "Continue watching" from the Plex index with a poster, newly added movies, the NAS disk filling up, a Pi under-voltage warning.
 - **Photo of the day** from `/srv/media/Photos` ("on this day, years ago"), alternating with the frog.
-- **Evening mode**: dim and warm after sunset, and CEC standby at night when nothing has played for an hour.
+- **Time of day, beyond the dashboard** (the `mode` widget is the one clock; these read it rather than keep their own times):
+  - *Quiet hours*: no AirPlay auto-dashboard and no toasts at night; a volume cap (couchd sets Kodi's volume on a mode change).
+  - *TV off at night*: CEC standby when the mode is `night` and nothing has played for an hour; `cec_on` in the morning only on a weekday, if wanted.
+  - *Morning*: a `morning` layout (the duck big, umbrella or no umbrella, the next trams) from 06:30 to 08:30 on weekdays; trams only then (widget schedules, below).
+  - *Per-mode carousel*: which bottom-row cards and slides show (e.g. no QR code in the evening), and a slower slide time at night.
+  - *Per-mode screensaver delay*: Kodi's `screensaver.time` shorter at night, so the dim clock comes sooner.
+  - *Movie mode*: `{"op": "set", "mode": "movie"}` from the app while something plays, or automatically when video plays after sunset, for a darker idle screen during pauses.
+  - *The phone*: a "Good night" button (Settings → Dashboard) and the current mode shown there (`data.mode`, `data.until`).
 - **Music**: now playing in the phone app and on the web page too (a pushed `nowplaying` widget, fed by the AirPlay add-on or by couchd from Kodi's JSON-RPC); a "music mode" with the artwork large and the rest small; lyrics or "what's this song" from the track name.
-- **Plumbing**: SSE `/v1/events` for the app (a `Notifier`), widget schedules (e.g. trams only 6–9 am), more carousel slides.
+- **Plumbing**: SSE `/v1/events` for the app (a `Notifier`), widget schedules (e.g. trams only 6–9 am: polled widgets asking the `mode` widget, or a `when` on a widget spec using the same rule syntax), more carousel slides.

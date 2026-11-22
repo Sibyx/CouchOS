@@ -132,7 +132,7 @@ uxplay_args: >-
 # dashd/build.sh builds the binary (the playbook refuses a build older than
 # dashd/src). The Kodi add-on finds dashd's port in its config file.
 dashboard_enabled: true
-dashd_version: 0.3.0
+dashd_version: 0.4.0
 dashd_dist: "{{ playbook_dir }}/../dashd/dist/dashd-{{ dashd_version }}-trixie-arm64"
 dashd_port: 8766
 # Widgets: {id, kind, params}. The TV skin binds these ids (clock, weather,
@@ -164,6 +164,25 @@ dashd_widgets:
   - id: app
     kind: qr
     params: {url: "{{ app_build_url }}", title: "CouchOS app", subtitle: "Scan to join the beta"}
+  # Time of day (the TV skin reads it by the id "mode"). Modes: day (all),
+  # evening (dimmed 20 %, a little warmer), night (only the time, dimmed
+  # 65 %); rules run in order, a later one wins. Times: "HH:MM", "sunrise",
+  # "sunset", "sunset+30". A window past midnight belongs to the day it
+  # starts on. Override from anywhere: POST /v1/widgets/mode
+  # {"op": "set", "mode": "night"} (until the schedule changes; "minutes": N
+  # for a while), {"op": "auto"}.
+  - id: mode
+    kind: daypart
+    params:
+      latitude: 48.1437
+      longitude: 17.1066
+      rules:
+        - {mode: evening, from: "sunset+30", to: "23:00"}
+        - {mode: night, from: "23:00", to: "06:30"}
+        # Later on Friday and Saturday nights:
+        # - {mode: evening, from: "23:00", to: "00:30", days: [fri, sat]}
+        # - {mode: night, from: "00:30", to: "08:30", days: [sat, sun]}
+      # modes: {night: {layout: clock, dim: 75}, movie: {dim: 40, tint: "#101020"}}
 
 # --- control plane -----------------------------------------------------------
 couchd_port: 8765

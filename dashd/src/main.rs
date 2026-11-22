@@ -17,6 +17,7 @@ mod notify;
 mod scheduler;
 mod state;
 mod store;
+mod sun;
 mod svg;
 #[cfg(test)]
 mod testing;

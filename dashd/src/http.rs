@@ -71,7 +71,14 @@ impl Api {
             ("POST", ["v1", "widgets", id]) => serde_json::from_slice::<Value>(body)
                 .map_err(|e| Error::invalid(format!("body must be JSON: {e}")))
                 .and_then(|input| self.hub.handle(id, input))
-                .map(|()| snapshot(store.widget(id))),
+                .map(|()| {
+                    // Input can move a widget's next due time (an override
+                    // ending in 30 min): the scheduler asks it again.
+                    if let Some(i) = self.hub.slots.iter().position(|s| s.id == *id) {
+                        self.trigger.refresh(i);
+                    }
+                    snapshot(store.widget(id))
+                }),
             ("POST", ["v1", "widgets", id, "refresh"]) => self.hub.slots.iter().position(|s| s.id == *id).map_or_else(
                 || Err(Error::not_found(format!("no widget {id:?}"))),
                 |i| {

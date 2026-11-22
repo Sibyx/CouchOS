@@ -10,7 +10,13 @@ loaded once, with their data kept current, and open on a notification:
                  shows, never over video, gone on the first key; this
                  process only draws it, at once, from the view it keeps)
   the catalog    JSONRPC.NotifyAll / NotifyAll(couchos,catalog): the blue
-                 key, the phone's "Open on TV", script.couchos.catalog
+                 key, the phone's "Open on TV", script.couchos.catalog.
+                 Kodi refuses a window while a modal dialog is up ("Activate
+                 of window refused because there are active modal dialogs",
+                 2026-11-22: the phone's "CouchOS search" did nothing while
+                 the dashboard was on). The dashboard is one: so the
+                 screensaver is woken first, then the dashboard and any other
+                 dialog (PM4K's spinner) are closed, then the catalog opens
   commands       NotifyAll "command" {"command": "cec_on"} from couchd (CEC,
                  bring video to the front, the dashboard now), run on a
                  worker: no interpreter per command either
@@ -71,6 +77,8 @@ CATALOG = "script.couchos.catalog"
 # Let the sender settle (a video handoff can follow an audio start).
 MUSIC_DELAY_SECONDS = 3
 PREFETCH_SECONDS = 90  # the catalog's home rows, rebuilt while it is closed
+WAKE_SECONDS = 2.0  # the catalog waits this long at most for the screensaver to end
+CLEAR_SECONDS = 1.0  # ... and this long for closed dialogs to go
 
 
 def log(msg, level=xbmc.LOGINFO):
@@ -85,6 +93,13 @@ def setting(name):
         return json.loads(answer)["result"]["value"]
     except (ValueError, KeyError, TypeError):
         return None
+
+
+def wake_screensaver():
+    """Kodi's JSON-RPC Input.* methods end the screensaver (and are used up
+    doing it), as a key from the phone does."""
+    xbmc.executeJSONRPC(json.dumps({
+        "jsonrpc": "2.0", "id": 1, "method": "Input.ExecuteAction", "params": {"action": "noop"}}))
 
 
 def load_lib(alias, addon_id):
@@ -110,8 +125,9 @@ class Host:
         self.dashboard = None
         self.catalog = None  # the catalog's app module
         self.session = None  # its Session (kept: home rows ready)
-        self.want_catalog = False
+        self.want_catalog = 0.0  # when the catalog was asked for, 0 = not
         self.want_dashboard = False
+        self.screensaver = False  # Kodi's, as its callbacks report it
         self.prefetched = 0.0
         try:
             path = load_lib("couchos_dashboard", DASHBOARD)
@@ -134,6 +150,7 @@ class Host:
     # -- from the monitor's and player's callbacks (this thread)
 
     def screensaver_on(self):
+        self.screensaver = True
         if self.dashboard is None:
             return
         # Kodi's dim over a paused video fires this too: never over video.
@@ -144,6 +161,7 @@ class Host:
         self.want_dashboard = True
 
     def screensaver_off(self):
+        self.screensaver = False
         self.want_dashboard = False
         if self.dashboard is not None:
             self.dashboard.hide()
@@ -157,7 +175,13 @@ class Host:
         if self.catalog_open:
             # Open but under another window: close it, open it fresh on top.
             self.session.close_all()
-        self.want_catalog = True
+        log("catalog asked for (window %d, dialog %d, screensaver %s)" % (
+            xbmcgui.getCurrentWindowId(), xbmcgui.getCurrentWindowDialogId(), self.screensaver))
+        self.want_catalog = time.monotonic()
+        if self.screensaver:
+            # Ended first: else the first key on the catalog is used up
+            # ending it, and PM4K, waking, can come back over the catalog.
+            wake_screensaver()
 
     def close_covered_catalog(self):
         if self.catalog_open and not self.session.on_top():
@@ -169,8 +193,27 @@ class Host:
 
     # -- the loop
 
+    def clear_the_way(self):
+        """No modal dialog may be open when the catalog's window opens."""
+        self.want_dashboard = False
+        if self.dashboard is not None:
+            self.dashboard.hide()
+        player = xbmc.Player()
+        # Over a video, PM4K's player and seek bar are dialogs: closing them
+        # could stop or confuse the playback. Then a refusal is only logged.
+        if not player.isPlayingVideo():
+            xbmc.executebuiltin("Dialog.Close(all,true)", True)
+        if not cond_safe(player):
+            xbmc.sleep(300)  # can't ask Kodi safely: give the close a moment
+            return
+        # A closing dialog (its fade) no longer counts; one still up does.
+        deadline = time.monotonic() + CLEAR_SECONDS
+        while xbmc.getCondVisibility("System.HasActiveModalDialog") and time.monotonic() < deadline:
+            xbmc.sleep(50)
+
     def run_catalog(self):
-        self.want_catalog = False
+        self.want_catalog = 0.0
+        self.clear_the_way()
         HOME.setProperty("couchos.catalog.running", "1")
         try:
             result = self.catalog.run(self.session.path, session=self.session)
@@ -184,7 +227,9 @@ class Host:
         self.prefetched = 0.0  # watched state changes after playing
 
     def tick(self, seconds):
-        if self.want_catalog:
+        # Once the screensaver has ended (or it didn't within WAKE_SECONDS).
+        if self.want_catalog and (not self.screensaver or
+                                  time.monotonic() - self.want_catalog > WAKE_SECONDS):
             self.run_catalog()
         if self.dashboard is not None:
             if self.want_dashboard and not self.catalog_open:
@@ -283,13 +328,19 @@ def open_dashboard_for_music(player, monitor):
     xbmc.executebuiltin("ActivateScreensaver")
 
 
+def cond_safe(player):
+    """Can xbmc.getCondVisibility be called now? Not while PAPlayer plays
+    (Plex music): it deadlocks against PAPlayer's fade-out on stop."""
+    try:
+        return not (player.isPlayingAudio() and not player.getPlayingFile().startswith(AIRPLAY))
+    except RuntimeError:
+        return False  # stopping right now: the riskiest moment
+
+
 def toast_visible(player):
     """None when it cannot be checked safely (PAPlayer playing)."""
-    try:
-        if player.isPlayingAudio() and not player.getPlayingFile().startswith(AIRPLAY):
-            return None
-    except RuntimeError:
-        return None  # stopping right now: the riskiest moment
+    if not cond_safe(player):
+        return None
     return xbmc.getCondVisibility("Window.IsVisible(notification)")
 
 

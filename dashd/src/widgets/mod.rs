@@ -2,6 +2,7 @@
 
 pub mod board;
 pub mod clock;
+pub mod daypart;
 pub mod frog;
 pub mod qr;
 pub mod weather;
@@ -17,6 +18,7 @@ pub const KINDS: &[(&str, Factory)] = &[
     ("frog", frog::build),
     ("board", board::build),
     ("qr", qr::build),
+    ("daypart", daypart::build),
 ];
 
 pub fn build(kind: &str, params: &Value) -> Result<Box<dyn Widget>> {
@@ -78,6 +80,7 @@ mod skin_contract {
             ("frog", "frog", json!(null)),
             ("board", "board", json!(null)),
             ("app", "qr", json!({"url": "https://example.com"})),
+            ("mode", "daypart", json!(null)),
         ];
         for (id, kind, params) in widgets {
             let w = super::build(kind, &params).unwrap();

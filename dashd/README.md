@@ -2,7 +2,8 @@
 
 The CouchOS dashboard daemon. Gathers widget data (clock, today's weather with a duck dressed for it, a message and TODO list written from the app, the frog of the day, the app's QR code) and serves it to every client: the TV, the phone app, the web page, anything on the LAN. No auth, like couchd.
 
-On the TV, a fixed grid on black, so nothing overlaps: three columns (time, date and today's weather; the duck and its line in a yellow bubble; the frog of the day) over a row of three equal card slots. The three columns are always there. A **message** from the app is a yellow banner across the top of the centre and right columns, in big type (smaller past 110 characters), only while there is one: the duck shrinks under it and the frog's text takes the place of its photo. The row is flexible: it shows only cards with something in them, side by side, and a hidden card leaves its slot to the next. The cards, in order:
+On the TV, a fixed grid on black, so nothing overlaps: three columns (time, date and today's weather; the duck and its line in a yellow bubble; the frog of the day) over a row of three equal card slots. The three columns are always there, the duck and the frog's photo included. The row is flexible: it shows only cards with something in them, side by side, and a hidden card leaves its slot to the next. The cards, in order:
+- a **message** from the app, while there is one: first, yellow, two slots wide, in big type (smaller past 110 characters). The next days step aside for it; the third slot is the TODO list, else what is playing, else the QR code
 - the TODO list, while it has items
 - **what is playing**, while audio plays (AirPlay from Spotify and the like, Plex music: artwork, title, artist, album, progress; straight from Kodi, not dashd)
 - the next days

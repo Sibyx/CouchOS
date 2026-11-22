@@ -12,11 +12,10 @@
 
      Margins: 72 left and right, 32 between columns; the burn-in drift
      (dashboard.py SHIFTS, up to 8 x 10 px) stays inside the screen.
-     A message from the app is a yellow banner over the centre and right
-     columns (36 to 216), only while there is one: the duck shrinks under it
-     and the frog's words take its photo's place. The bottom row shows only
-     cards with something in them: TO DO when it has items, what is
-     playing when something plays audio only (AirPlay from
+     The duck and the frog (with its photo) are always there. The bottom row
+     shows only cards with something in them: a message from the app
+     (first, yellow, two slots wide: the next days step aside for it), TO DO
+     when it has items, what is playing when something plays audio only (AirPlay from
      Spotify, Plex music), and next days and the app. What doesn't fit
      shares the last slot as a carousel, a slide every 20 s
      (Window.Property(slide), set by dashboard.py; a slide without data is
@@ -134,52 +133,17 @@
                 </control>
             </control>
 
-            <!-- ================= the message: a banner on top =================
-                 Only while there is one. It takes the top of the centre and
-                 right columns (the clock stays where it is): the duck shrinks
-                 to 360 under it and the frog drops its photo. Up to 110
-                 characters in big type (two lines), longer ones (to 280)
-                 smaller (four lines): board.message_long, from dashd. -->
-            <control type="group">
-                <left>704</left><top>36</top>
-                <visible>!String.IsEmpty(Window.Property(board.message))</visible>
-                <animation effect="fade" time="400">Visible</animation>
-                <control type="image"><left>0</left><top>0</top><width>1144</width><height>180</height><texture border="24" colordiffuse="FFFFD23F">card.png</texture></control>
-                <control type="textbox">
-                    <left>36</left><top>30</top><width>1072</width><height>120</height>
-                    <aligny>center</aligny><font>font37</font><textcolor>FF1D1D1D</textcolor>
-                    <label>[B]$INFO[Window.Property(board.message)][/B]</label>
-                    <visible>String.IsEmpty(Window.Property(board.message_long))</visible>
-                </control>
-                <control type="textbox">
-                    <left>36</left><top>18</top><width>1072</width><height>144</height>
-                    <aligny>center</aligny><font>font27</font><textcolor>FF1D1D1D</textcolor>
-                    <label>[B]$INFO[Window.Property(board.message)][/B]</label>
-                    <visible>!String.IsEmpty(Window.Property(board.message_long))</visible>
-                </control>
-            </control>
-
             <!-- ================= centre: the duck ================= -->
             <control type="image">
                 <left>704</left><top>40</top><width>512</width><height>512</height>
                 <fadetime>400</fadetime>
                 <texture background="true">$INFO[Window.Property(weather.duck)]</texture>
-                <visible>!String.IsEmpty(Window.Property(weather.duck)) + String.IsEmpty(Window.Property(board.message))</visible>
+                <visible>!String.IsEmpty(Window.Property(weather.duck))</visible>
             </control>
-            <!-- under the message: 360, the same picture scaled -->
-            <control type="image">
-                <left>780</left><top>232</top><width>360</width><height>360</height>
-                <aspectratio>keep</aspectratio>
-                <fadetime>400</fadetime>
-                <texture background="true">$INFO[Window.Property(weather.duck)]</texture>
-                <visible>!String.IsEmpty(Window.Property(weather.duck)) + !String.IsEmpty(Window.Property(board.message))</visible>
-            </control>
-            <!-- its line, in a yellow speech bubble pointing up at it (a bit
-                 lower under the message: the small duck ends at 592) -->
+            <!-- its line, in a yellow speech bubble pointing up at it -->
             <control type="group">
                 <left>704</left><top>580</top>
                 <visible>!String.IsEmpty(Window.Property(weather.tip))</visible>
-                <animation effect="slide" end="0,24" time="0" condition="!String.IsEmpty(Window.Property(board.message))">Conditional</animation>
                 <control type="image">
                     <left>240</left><top>-12</top><width>32</width><height>32</height>
                     <texture colordiffuse="FFFFD23F">white.png</texture>
@@ -205,12 +169,7 @@
                     <aspectratio>scale</aspectratio>
                     <fadetime>400</fadetime>
                     <texture background="true">$INFO[Window.Property(frog.photo)]</texture>
-                    <visible>String.IsEmpty(Window.Property(board.message))</visible>
                 </control>
-                <!-- the words; under the message banner (to 216) they move up
-                     into the photo's place, from 232 -->
-                <control type="group">
-                <animation effect="slide" end="0,-124" time="0" condition="!String.IsEmpty(Window.Property(board.message))">Conditional</animation>
                 <control type="label">
                     <left>0</left><top>316</top><width>600</width><height>28</height>
                     <font>font12</font><textcolor>FFFFD23F</textcolor>
@@ -244,16 +203,18 @@
                     <font>font10</font><textcolor>FF5A5A5A</textcolor>
                     <label>$INFO[Window.Property(frog.attribution)]</label>
                 </control>
-                </control>
             </control>
 
             <!-- ================= bottom row: 712 to 1016 =================
                  Only the cards with something to show, left to right in a
                  grouplist (a hidden card takes no room). Three slots, all
                  570 wide with 33 between (1776): any card can land in any
-                 slot. Window.Property(board.cards) (dashboard.py) says how
-                 many of them the TO DO list takes (the message is the
-                 banner on top, not a card):
+                 slot. Window.Property(board.cards) (dashboard.py) is 1 while
+                 the TO DO list has items, else 0.
+                 With a message: the message first, yellow, two slots wide
+                 (next days step aside), then TO DO, else now playing, else
+                 the app.
+                 Without one:
                    1  TO DO, then now playing + the carousel, else next
                       days + the app, both at once
                    0  now playing + next days + the app, else next days
@@ -263,6 +224,33 @@
                 <orientation>horizontal</orientation>
                 <itemgap>33</itemgap>
                 <scrolltime>0</scrolltime>
+
+            <!-- the message from the app, while there is one: two slots
+                 (570 + 33 + 570), big type up to 110 characters, smaller
+                 past that (board.message_long, from dashd; at most 280) -->
+            <control type="group">
+                <width>1173</width><height>304</height>
+                <visible>!String.IsEmpty(Window.Property(board.message))</visible>
+                <animation effect="fade" time="400">Visible</animation>
+                <control type="image"><left>0</left><top>0</top><width>1173</width><height>304</height><texture border="24" colordiffuse="FFFFD23F">card.png</texture></control>
+                <control type="label">
+                    <left>40</left><top>24</top><width>1093</width><height>28</height>
+                    <font>font12</font><textcolor>B31D1D1D</textcolor>
+                    <label>MESSAGE</label>
+                </control>
+                <control type="textbox">
+                    <left>40</left><top>62</top><width>1093</width><height>214</height>
+                    <font>font37</font><textcolor>FF1D1D1D</textcolor>
+                    <label>[B]$INFO[Window.Property(board.message)][/B]</label>
+                    <visible>String.IsEmpty(Window.Property(board.message_long))</visible>
+                </control>
+                <control type="textbox">
+                    <left>40</left><top>62</top><width>1093</width><height>214</height>
+                    <font>font27</font><textcolor>FF1D1D1D</textcolor>
+                    <label>[B]$INFO[Window.Property(board.message)][/B]</label>
+                    <visible>!String.IsEmpty(Window.Property(board.message_long))</visible>
+                </control>
+            </control>
 
             <!-- the TODO list: open items, then done ones (dimmed) for a while -->
             <control type="group">
@@ -330,7 +318,7 @@
                      covers both. -->
                 <control type="group">
                     <width>570</width><height>304</height>
-                    <visible>Player.HasAudio + !Player.HasVideo</visible>
+                    <visible>Player.HasAudio + !Player.HasVideo + [String.IsEmpty(Window.Property(board.message)) | String.IsEqual(Window.Property(board.cards),0)]</visible>
                     <animation effect="fade" time="400">Visible</animation>
                     <control type="image"><left>0</left><top>0</top><width>570</width><height>304</height><texture border="24" colordiffuse="14FFFFFF">card.png</texture></control>
                     <!-- 256 px: within the texture limit, drawn as sent -->
@@ -396,7 +384,7 @@
                      room, else a carousel slide -->
                 <control type="group">
                     <width>570</width><height>304</height>
-                    <visible>!String.IsEmpty(Window.Property(weather.days)) + [[String.IsEqual(Window.Property(board.cards),1) + [!Player.HasAudio | String.IsEqual(Window.Property(slide),days)]] | [String.IsEqual(Window.Property(board.cards),0) + Player.HasAudio]]</visible>
+                    <visible>String.IsEmpty(Window.Property(board.message)) + !String.IsEmpty(Window.Property(weather.days)) + [[String.IsEqual(Window.Property(board.cards),1) + [!Player.HasAudio | String.IsEqual(Window.Property(slide),days)]] | [String.IsEqual(Window.Property(board.cards),0) + Player.HasAudio]]</visible>
                     <animation effect="fade" time="400">Visible</animation>
                     <control type="image"><left>0</left><top>0</top><width>570</width><height>304</height><texture border="24" colordiffuse="14FFFFFF">card.png</texture></control>
                     <control type="label">
@@ -439,7 +427,7 @@
                      the row but the app (two slots: 570 + 33 + 570) -->
                 <control type="group">
                     <width>1173</width><height>304</height>
-                    <visible>!String.IsEmpty(Window.Property(weather.days)) + String.IsEqual(Window.Property(board.cards),0) + !Player.HasAudio</visible>
+                    <visible>String.IsEmpty(Window.Property(board.message)) + !String.IsEmpty(Window.Property(weather.days)) + String.IsEqual(Window.Property(board.cards),0) + !Player.HasAudio</visible>
                     <animation effect="fade" time="400">Visible</animation>
                     <control type="image"><left>0</left><top>0</top><width>1173</width><height>304</height><texture border="24" colordiffuse="14FFFFFF">card.png</texture></control>
                     <control type="label">
@@ -489,7 +477,7 @@
                      there's room, else a carousel slide. -->
                 <control type="group">
                     <width>570</width><height>304</height>
-                    <visible>!String.IsEmpty(Window.Property(app.image)) + [[String.IsEqual(Window.Property(board.cards),1) + [!Player.HasAudio | String.IsEqual(Window.Property(slide),app)]] | String.IsEqual(Window.Property(board.cards),0)]</visible>
+                    <visible>!String.IsEmpty(Window.Property(app.image)) + [[String.IsEmpty(Window.Property(board.message)) + [[String.IsEqual(Window.Property(board.cards),1) + [!Player.HasAudio | String.IsEqual(Window.Property(slide),app)]] | String.IsEqual(Window.Property(board.cards),0)]] | [!String.IsEmpty(Window.Property(board.message)) + String.IsEqual(Window.Property(board.cards),0) + !Player.HasAudio]]</visible>
                     <animation effect="fade" time="400">Visible</animation>
                     <control type="image"><left>0</left><top>0</top><width>570</width><height>304</height><texture border="24" colordiffuse="14FFFFFF">card.png</texture></control>
                     <!-- 198 px = 33 modules x 6: drawn at its own size, never scaled -->

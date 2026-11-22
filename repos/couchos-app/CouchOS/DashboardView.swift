@@ -52,9 +52,9 @@ struct DashboardView: View {
                 Text("Message")
             } footer: {
                 if let message = board?.message {
-                    Text("On the TV now, across the top of the dashboard: “\(message.text)”")
+                    Text("On the TV's dashboard now: “\(message.text)”")
                 } else {
-                    Text("\(draft.count)/\(Board.messageLimit). Shown across the top of the TV's dashboard until you take it down. Emoji show in the app only; the TV's font has none.")
+                    Text("\(draft.count)/\(Board.messageLimit). Shown large on the TV's dashboard until you take it down. Emoji show in the app only; the TV's font has none.")
                 }
             }
 

@@ -32,6 +32,7 @@ All notable changes to the CouchOS iOS app.
 ### Changed
 - Open on TV → CouchOS search opens at once: the TV keeps the catalog ready instead of starting it. (build 4)
 - Dashboard messages no longer have a "From" field; the TV shows the message as a banner across the top of its dashboard. (build 4)
+- The dashboard message note now matches the TV, where the message shows as a large yellow card in the bottom row. (build 5)
 
 ### Changed
 - Bundle identifier is `dev.dubec.couchos`. (build 1)

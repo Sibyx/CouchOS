@@ -1165,6 +1165,90 @@ class DisplayWatchdog:
         return None
 
 
+class TvSchedule:
+    """Wake the TV, or put it to standby, when the dashboard's time of day
+    changes (dashd's `mode` widget, the one clock: see dashd/README.md).
+
+    COUCHD_WAKE_MODES (e.g. "morning"): entering one of these modes wakes
+    the TV over CEC and shows the dashboard (only CEC when the dashboard is
+    turned off: a scheduled wake never turns it back on; nothing when a
+    video plays). COUCHD_STANDBY_MODES: entering one puts the TV to standby,
+    unless something plays. Only a change seen while running counts: a
+    restart of couchd or dashd in the middle of the morning wakes nothing,
+    and nothing runs late for a time the Pi was off.
+    """
+
+    INTERVAL = 60  # mode changes are minute-exact at best; a minute late is fine
+
+    def __init__(self, cec: Cec, dashboard: Dashboard):
+        self.cec = cec
+        self.dashboard = dashboard
+        self.wake_on = self._modes("COUCHD_WAKE_MODES")
+        self.standby_on = self._modes("COUCHD_STANDBY_MODES")
+        self.url = os.environ.get("COUCHD_DASHD_URL", "http://127.0.0.1:8766").rstrip("/") + "/v1/widgets/mode"
+        self.mode: str | None = None
+        self.last: dict | None = None  # the last action, for GET /api/tv/schedule
+
+    @staticmethod
+    def _modes(name: str) -> list[str]:
+        return [m.strip() for m in os.environ.get(name, "").split(",") if m.strip()]
+
+    def start(self) -> None:
+        if self.wake_on or self.standby_on:
+            log.info("TV schedule: wake on %s, standby on %s", self.wake_on or "-", self.standby_on or "-")
+            threading.Thread(target=self._watch, name="tv-schedule", daemon=True).start()
+
+    def status(self) -> dict:
+        return {"wake_on": self.wake_on, "standby_on": self.standby_on, "mode": self.mode, "last": self.last}
+
+    def _current(self) -> str | None:
+        try:
+            with urllib.request.urlopen(self.url, timeout=5) as resp:
+                return json.loads(resp.read())["data"]["mode"]
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            log.debug("TV schedule: no mode from dashd (%s)", exc)
+            return None
+
+    def _watch(self) -> None:
+        while True:
+            try:
+                mode, before = self._current(), self.mode
+                if mode is not None:
+                    self.mode = mode  # first: a failed action is not retried every minute
+                    if before is not None and mode != before:
+                        self._entered(mode)
+            except Exception:
+                log.exception("TV schedule failed")
+            time.sleep(self.INTERVAL)
+
+    def _entered(self, mode: str) -> None:
+        if mode in self.wake_on:
+            self._act("wake", mode, self._wake)
+        elif mode in self.standby_on:
+            self._act("standby", mode, self._standby)
+
+    def _act(self, action: str, mode: str, do: Callable[[], str]) -> None:
+        try:
+            result = do()
+        except ApiError as exc:
+            result = f"skipped: {exc}"
+        except Exception as exc:  # Kodi down (OSError), an odd answer: log, keep watching
+            result = f"failed: {exc!r}"
+        log.info("TV schedule: %s on entering %s: %s", action, mode, result)
+        self.last = {"action": action, "mode": mode, "at": int(time.time()), "result": result}
+
+    def _wake(self) -> str:
+        if not self.dashboard.status()["enabled"]:
+            return f"TV on via {self.cec.tv('on')} (dashboard is off)"
+        self.dashboard.set(None, show=True)  # 409 while a video plays
+        return "dashboard shown"
+
+    def _standby(self) -> str:
+        if now_playing() is not None:
+            return "skipped: something is playing"
+        return f"standby via {self.cec.tv('standby')}"
+
+
 def addresses() -> list[str]:
     out = run("ip", "-4", "-o", "addr", "show", "scope", "global").stdout
     return re.findall(r"inet (\d+\.\d+\.\d+\.\d+)/", out)
@@ -1227,6 +1311,7 @@ class App:
             self.catalog_error = f"Plex catalog unavailable: {exc}"
         self.plex = PlexOnTV(self.airplay, self.catalog)
         self.dashboard = Dashboard()
+        self.schedule = TvSchedule(self.cec, self.dashboard)
         self.events = EventBus()
         state = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state")
         self.metrics = Metrics(state / "couchd" / "metrics.json", metrics_disks())
@@ -1400,6 +1485,8 @@ class App:
                 return {"ok": True}
             case ("POST", ["tv"]):
                 return {"via": self.cec.tv(str(body.get("power", "")))}
+            case ("GET", ["tv", "schedule"]):
+                return self.schedule.status()
             case ("POST", ["kodi", "input"]):
                 action = str(body.get("action", ""))
                 if action not in KODI_INPUTS:
@@ -1547,6 +1634,7 @@ def main() -> None:
     app.metrics.start(every_minute)
     app.start()
     DisplayWatchdog(app.services).start()
+    app.schedule.start()
     server = ThreadingHTTPServer((BIND, PORT), make_handler(app))
     server.daemon_threads = True
     # systemd stops us with SIGTERM: exit cleanly so the metrics get saved.

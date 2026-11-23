@@ -8,12 +8,21 @@
 //!   {"op": "edit", "id": 3, "text": "Buy oat milk"}
 //!   {"op": "remove", "id": 3}
 //!   {"op": "clear_done"}
+//!   {"op": "sync", "source": "reminders", "items": [{"ext_id": "x1", "text": "Buy milk", "done": false}]}
 //! ```
 //!
 //! Every answer is the whole board. Done items stay on the TV, dimmed, for
 //! `keep_done_hours`, then only the app lists them. A message can expire
 //! after `message_hours` (0: it stays until replaced).
+//!
+//! `sync` mirrors a list kept elsewhere (the phone's Reminders): it replaces
+//! that source's items and leaves the others (typed in the app) alone. An
+//! item keeps its id across syncs (matched by `ext_id`), so the TV's order
+//! and dimming don't jump. A sync is never refused for one bad item: long
+//! titles are shortened, empty ones skipped, and what doesn't fit under
+//! `MAX_ITEMS` left out. An empty `items` takes the source's items down.
 
+use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -81,6 +90,24 @@ pub struct Item {
     pub added_at: u64,
     #[serde(default)]
     pub done_at: Option<u64>,
+    /// Where a synced item comes from ("reminders"); none = typed in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    /// Its id there (EventKit's calendarItemIdentifier).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ext_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SyncItem {
+    ext_id: String,
+    text: String,
+    #[serde(default)]
+    done: bool,
+    /// When it was done there (unix seconds); else the time of the sync.
+    #[serde(default)]
+    done_at: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -107,6 +134,10 @@ enum Op {
         id: u64,
     },
     ClearDone,
+    Sync {
+        source: String,
+        items: Vec<SyncItem>,
+    },
 }
 
 fn yes() -> bool {
@@ -139,6 +170,18 @@ fn clean(text: &str, max: usize, what: &str) -> Result<String> {
         return Err(Error::invalid(format!("{what}: at most {max} characters")));
     }
     Ok(text.to_owned())
+}
+
+/// One line of synced text: shortened with "…" rather than refused.
+fn shorten(text: &str, max: usize) -> String {
+    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if text.chars().count() <= max {
+        return text;
+    }
+    let mut short: String = text.chars().take(max - 1).collect();
+    short.truncate(short.trim_end().len());
+    short.push('…');
+    short
 }
 
 /// Kodi label markup is [B], [COLOR ...], [CR]: user text must not be read
@@ -177,7 +220,15 @@ impl State {
                     return Err(Error::invalid(format!("at most {MAX_ITEMS} items: remove some first")));
                 }
                 self.next_id += 1;
-                self.items.push(Item { id: self.next_id, text, done: false, added_at: now, done_at: None });
+                self.items.push(Item {
+                    id: self.next_id,
+                    text,
+                    done: false,
+                    added_at: now,
+                    done_at: None,
+                    source: None,
+                    ext_id: None,
+                });
             }
             Op::Done { id, done } => {
                 let item = self.item(id)?;
@@ -198,6 +249,59 @@ impl State {
                 self.items.retain(|i| i.id != id);
             }
             Op::ClearDone => self.items.retain(|i| !i.done),
+            Op::Sync { source, items } => self.sync(&source, items, now)?,
+        }
+        Ok(())
+    }
+
+    fn sync(&mut self, source: &str, items: Vec<SyncItem>, now: u64) -> Result<()> {
+        let source = clean(source, 40, "source")?;
+        if source.is_empty() {
+            return Err(Error::invalid("sync: source is empty"));
+        }
+        let mut before: HashMap<String, Item> = HashMap::new();
+        self.items.retain(|i| {
+            if i.source.as_deref() != Some(source.as_str()) {
+                return true;
+            }
+            if let Some(key) = &i.ext_id {
+                before.insert(key.clone(), i.clone());
+            }
+            false
+        });
+        let room = MAX_ITEMS.saturating_sub(self.items.len());
+        let mut added = 0;
+        let mut seen = std::collections::HashSet::new();
+        for s in items {
+            let text = shorten(&s.text, ITEM_CHARS);
+            if added == room || text.is_empty() || !seen.insert(s.ext_id.clone()) {
+                continue;
+            }
+            let done_at = s.done.then(|| s.done_at.unwrap_or(now));
+            let item = match before.remove(&s.ext_id) {
+                Some(mut item) => {
+                    item.text = text;
+                    if item.done != s.done {
+                        item.done = s.done;
+                        item.done_at = done_at;
+                    }
+                    item
+                }
+                None => {
+                    self.next_id += 1;
+                    Item {
+                        id: self.next_id,
+                        text,
+                        done: s.done,
+                        added_at: now,
+                        done_at,
+                        source: Some(source.clone()),
+                        ext_id: Some(s.ext_id),
+                    }
+                }
+            };
+            self.items.push(item);
+            added += 1;
         }
         Ok(())
     }
@@ -347,6 +451,72 @@ mod tests {
         assert_eq!(later.view["message"], "");
         // the app still has it
         assert_eq!(later.data["items"][0]["text"], "Milk");
+    }
+
+    #[test]
+    fn sync_mirrors_one_source_and_keeps_ids() {
+        let ctx = ctx();
+        let board = build(&Value::Null).unwrap();
+        board.initial(&ctx);
+        board.handle(&ctx, json!({"op": "add", "text": "Typed in"})).unwrap();
+        let out = board
+            .handle(&ctx, json!({"op": "sync", "source": "reminders", "items": [
+                {"ext_id": "a", "text": "Milk"},
+                {"ext_id": "b", "text": "Bread", "done": true, "done_at": 5},
+                {"ext_id": "c", "text": "   "},
+                {"ext_id": "a", "text": "Milk again"},
+                {"ext_id": "d", "text": "x".repeat(200)},
+            ]}))
+            .unwrap();
+        let items = out.data["items"].as_array().unwrap();
+        assert_eq!(items.len(), 4, "typed + a + b + d; empty and duplicate skipped");
+        assert_eq!(items[0]["text"], "Typed in");
+        assert!(items[0].get("source").is_none());
+        assert_eq!((items[1]["id"].as_u64(), items[1]["source"].as_str()), (Some(2), Some("reminders")));
+        assert_eq!(items[2]["done_at"], 5);
+        let long = items[3]["text"].as_str().unwrap();
+        assert_eq!(long.chars().count(), ITEM_CHARS);
+        assert!(long.ends_with('…'));
+
+        // a renamed and done, b reopened, d gone: ids stay, done_at only on a change
+        let out = board
+            .handle(&ctx, json!({"op": "sync", "source": "reminders", "items": [
+                {"ext_id": "b", "text": "Bread"},
+                {"ext_id": "a", "text": "Oat milk", "done": true},
+            ]}))
+            .unwrap();
+        let items = out.data["items"].as_array().unwrap();
+        let ids: Vec<_> = items.iter().map(|i| i["id"].as_u64().unwrap()).collect();
+        assert_eq!(ids, [1, 3, 2]);
+        assert_eq!((items[1]["done"].as_bool(), items[1]["done_at"].is_null()), (Some(false), true));
+        assert_eq!(items[2]["text"], "Oat milk");
+        assert_eq!(items[2]["done_at"], ctx.clock.now().unix);
+
+        // nothing from the source: only its items go
+        let out = board.handle(&ctx, json!({"op": "sync", "source": "reminders", "items": []})).unwrap();
+        assert_eq!(out.data["items"].as_array().unwrap().len(), 1);
+        assert!(board.handle(&ctx, json!({"op": "sync", "source": " ", "items": []})).is_err());
+    }
+
+    #[test]
+    fn sync_fills_only_the_room_left() {
+        let mut state = State::default();
+        for k in 0..MAX_ITEMS - 2 {
+            state.apply(Op::Add { text: format!("typed {k}") }, 0).unwrap();
+        }
+        let items = (0..5).map(|k| SyncItem { ext_id: k.to_string(), text: format!("r{k}"), done: false, done_at: None });
+        state.apply(Op::Sync { source: "reminders".into(), items: items.collect() }, 0).unwrap();
+        assert_eq!(state.items.len(), MAX_ITEMS);
+        assert_eq!(state.items.last().unwrap().text, "r1");
+    }
+
+    #[test]
+    fn a_board_saved_before_sync_still_loads() {
+        let old = r#"{"message":null,"items":[{"id":1,"text":"Milk","done":true,"added_at":1,"done_at":2}],"next_id":1}"#;
+        let state: State = serde_json::from_str(old).unwrap();
+        assert_eq!((state.items[0].source.as_deref(), state.items[0].done_at), (None, Some(2)));
+        let saved = serde_json::to_value(&state).unwrap();
+        assert!(saved["items"][0].get("ext_id").is_none(), "typed items are saved as before");
     }
 
     #[test]

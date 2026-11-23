@@ -10,6 +10,8 @@ struct DashboardView: View {
     @State private var draft = ""
     @State private var newItem = ""
     @State private var busy = false
+    @State private var remindersList: String?
+    @State private var reminderLists: [RemindersSync.List] = []
     @FocusState private var addFocused: Bool
 
     var body: some View {
@@ -60,7 +62,7 @@ struct DashboardView: View {
 
             Section {
                 ForEach(board?.items ?? []) { item in
-                    Button { run(["op": "done", "id": item.id, "done": !item.done]) } label: {
+                    Button { toggle(item) } label: {
                         HStack(spacing: 12) {
                             Image(systemName: item.done ? "checkmark.circle.fill" : "circle")
                                 .foregroundStyle(item.done ? Brand.ok : Brand.muted)
@@ -68,10 +70,20 @@ struct DashboardView: View {
                             Text(item.text)
                                 .strikethrough(item.done)
                                 .foregroundStyle(item.done ? Brand.muted : Brand.text)
+                            if item.fromReminders {
+                                Spacer()
+                                Image(systemName: "checklist")
+                                    .foregroundStyle(Brand.muted)
+                                    .accessibilityLabel("From Reminders")
+                            }
                         }
                     }
                     .swipeActions {
-                        Button("Delete", role: .destructive) { run(["op": "remove", "id": item.id]) }
+                        // A synced item would come back with the next sync:
+                        // it is removed in Reminders, not here.
+                        if !item.fromReminders {
+                            Button("Delete", role: .destructive) { run(["op": "remove", "id": item.id]) }
+                        }
                     }
                     .accessibilityValue(item.done ? "Done" : "To do")
                 }
@@ -91,7 +103,41 @@ struct DashboardView: View {
             } header: {
                 Text("To do")
             } footer: {
-                Text("Done items stay on the TV, dimmed, for a while. Swipe to delete.")
+                Text(remindersList == nil
+                     ? "Done items stay on the TV, dimmed, for a while. Swipe to delete."
+                     : "Done items stay on the TV, dimmed, for a while. Swipe to delete; items from Reminders are deleted in Reminders.")
+            }
+
+            Section {
+                if remindersList == nil {
+                    Button { Task { await startReminders() } } label: {
+                        Label("Show a Reminders list on the TV", systemImage: "checklist")
+                    }
+                    .disabled(!model.hasHost || busy)
+                    // Synced items left behind (Reminders access was turned
+                    // off): taking them down needs no access.
+                    if board?.items.contains(where: \.fromReminders) == true {
+                        Button("Remove Reminders items from the TV", role: .destructive) { choose(nil) }
+                            .disabled(busy)
+                    }
+                } else {
+                    Picker("List", selection: Binding(
+                        get: { remindersList ?? "" },
+                        set: { choose($0) }
+                    )) {
+                        ForEach(reminderLists) { Text($0.title).tag($0.id) }
+                    }
+                    Button("Sync now") { choose(remindersList) }
+                        .disabled(busy)
+                    Button("Stop showing Reminders", role: .destructive) { choose(nil) }
+                        .disabled(busy)
+                }
+            } header: {
+                Text("Reminders")
+            } footer: {
+                Text(remindersList == nil
+                     ? "Its open reminders join the TV's to-do list, and stay in step whenever CouchOS is open."
+                     : "Syncs whenever CouchOS is open. To keep the TV current otherwise, add a Shortcuts automation: “When Reminders is closed” → “Sync Reminders to TV”.")
             }
         }
         .navigationTitle("Dashboard")
@@ -101,12 +147,59 @@ struct DashboardView: View {
     }
 
     private func load() async {
+        let reminders = RemindersSync.shared
+        remindersList = reminders.isOn ? reminders.listID : nil
+        reminderLists = reminders.lists()
         guard let dashd = model.dashd else { return }
         do {
-            board = try await dashd.board()
+            // Synced first, so the list opens already in step with Reminders.
+            if reminders.isOn, let synced = try? await reminders.sync() {
+                board = synced
+            } else {
+                board = try await dashd.board()
+            }
             duck = try? await dashd.duck()
         } catch {
             model.message = "The dashboard isn't reachable: \(error.localizedDescription)"
+        }
+    }
+
+    private func toggle(_ item: Board.Item) {
+        guard item.fromReminders, let extId = item.extId else {
+            run(["op": "done", "id": item.id, "done": !item.done])
+            return
+        }
+        reminders { try await $0.setDone(extId, !item.done) }
+    }
+
+    private func startReminders() async {
+        guard await RemindersSync.shared.requestAccess() else {
+            model.message = RemindersSync.SyncError.noAccess.localizedDescription
+            return
+        }
+        reminderLists = RemindersSync.shared.lists()
+        guard let first = reminderLists.first else {
+            model.message = "There are no lists in Reminders yet."
+            return
+        }
+        choose(first.id)
+    }
+
+    private func choose(_ list: String?) {
+        remindersList = list
+        reminders { try await $0.choose(list) }
+        if list != nil { RemindersSync.shared.observe() }
+    }
+
+    private func reminders(_ work: @escaping @MainActor (RemindersSync) async throws -> Board?) {
+        busy = true
+        Task {
+            defer { busy = false }
+            do {
+                if let updated = try await work(RemindersSync.shared) { board = updated }
+            } catch {
+                model.message = error.localizedDescription
+            }
         }
     }
 

@@ -28,6 +28,8 @@ All notable changes to the CouchOS iOS app.
 - Privacy manifest and export-compliance declaration, needed for TestFlight. (build 1)
 - Dashboard screen (Settings → Dashboard): send a message to the TV, keep a shared to-do list on it, and see the weather duck the TV is showing. (build 2)
 - Open on TV → CouchOS search: opens the TV's own catalog, for searching with the TV remote. (build 3)
+- Dashboard → Reminders: show a Reminders list on the TV's to-do list. It stays in step while the app is open, and ticking an item in the app ticks it in Reminders. (build 6)
+- Siri and Shortcuts actions: Show Dashboard on TV, Turn TV On or Off, Set Dashboard Mode (e.g. "Good night"), and Sync Reminders to TV. They also work in Shortcuts automations. (build 6)
 
 ### Changed
 - Open on TV → CouchOS search opens at once: the TV keeps the catalog ready instead of starting it. (build 4)

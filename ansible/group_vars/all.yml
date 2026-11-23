@@ -132,7 +132,11 @@ uxplay_args: >-
 # dashd/build.sh builds the binary (the playbook refuses a build older than
 # dashd/src). The Kodi add-on finds dashd's port in its config file.
 dashboard_enabled: true
-dashd_version: 0.4.0
+# A video paused this long (minutes), with no key pressed for as long, is
+# stopped (Plex keeps the resume point) and the dashboard opens. Not AirPlay.
+# 0 = never: Kodi's dim stays over a paused video.
+dashboard_paused_minutes: 30
+dashd_version: 0.5.0
 dashd_dist: "{{ playbook_dir }}/../dashd/dist/dashd-{{ dashd_version }}-trixie-arm64"
 dashd_port: 8766
 # Widgets: {id, kind, params}. The TV skin binds these ids (clock, weather,
@@ -179,13 +183,26 @@ dashd_widgets:
       rules:
         - {mode: evening, from: "sunset+30", to: "23:00"}
         - {mode: night, from: "23:00", to: "06:30"}
+        # Looks like day; couchd wakes the TV when it starts (couchd_wake_modes).
+        - {mode: morning, from: "07:00", to: "09:00", days: [weekdays]}
         # Later on Friday and Saturday nights:
         # - {mode: evening, from: "23:00", to: "00:30", days: [fri, sat]}
         # - {mode: night, from: "00:30", to: "08:30", days: [sat, sun]}
-      # modes: {night: {layout: clock, dim: 75}, movie: {dim: 40, tint: "#101020"}}
+      modes:
+        morning: {layout: full, dim: 0}
+        # night: {layout: clock, dim: 75}
+        # movie: {dim: 40, tint: "#101020"}
 
 # --- control plane -----------------------------------------------------------
 couchd_port: 8765
+# The TV on a schedule, by the dashboard's time of day (the `mode` widget
+# above is the one clock). Entering a wake mode turns the TV on over CEC and
+# shows the dashboard (never over a video; when the dashboard is turned off,
+# only the TV comes on). Entering a standby mode puts the TV to standby unless
+# something plays. Only a change seen while couchd runs counts. [] = off.
+# GET /api/tv/schedule shows the last action.
+couchd_wake_modes: [morning]
+couchd_standby_modes: []     # e.g. [night]
 # Plex artwork cached on the SD card for the phone app (MB). Every library's
 # list artwork is about 2-3 GB; detail sizes add to it as they're viewed.
 couchd_art_cache_mb: 16384

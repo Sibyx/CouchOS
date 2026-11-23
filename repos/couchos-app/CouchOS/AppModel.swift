@@ -173,6 +173,14 @@ final class AppModel {
         tap.prepare()
         discovery.start()
         reconnect()
+        // A Reminders list shown on the TV: catch up on what changed while
+        // the app was closed, and follow changes while it is open.
+        Task { @MainActor in
+            let reminders = RemindersSync.shared
+            guard reminders.isOn else { return }
+            reminders.observe()
+            reminders.syncSoon()
+        }
     }
 
     func deactivate() {

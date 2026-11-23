@@ -129,15 +129,28 @@ The Plex catalog from couchd's index on the box:
   the box's address (found over Bonjour; a typed address stays until cleared),
   restart Kodi, and About (version and build).
 
+### Dashboard, Reminders and Siri
+
+- **Dashboard** (sliders button → Dashboard): the message and to-do list on the
+  TV. **Reminders** there shows one Reminders list in the to-do list (dashd's
+  board `sync`, source `reminders`). It syncs when the app opens, on every change
+  while it is open, and when an item is ticked in the app, which ticks it in
+  Reminders too. Synced items are deleted in Reminders, not in the app.
+- **Siri and Shortcuts** (`Intents.swift`): Show Dashboard on TV, Turn TV On or
+  Off, Set Dashboard Mode, Sync Reminders to TV. They run in the background
+  against the last box found, at home only. No home hub is needed; a Shortcuts
+  personal automation ("When Reminders is closed" → Sync Reminders to TV, "When
+  I join my Wi-Fi" → Show Dashboard) runs them without opening the app.
+
 ## Project layout
 
 | Path | What |
 |---|---|
-| `CouchOS/` | The app: SwiftUI views, `AppModel` (state and actions), `KodiLink` (TCP JSON-RPC), `Couchd` and `Plex` (HTTP API), `Discovery` (Bonjour), `Brand` (design tokens) |
+| `CouchOS/` | The app: SwiftUI views, `AppModel` (state and actions), `KodiLink` (TCP JSON-RPC), `Couchd`, `Dashd` and `Plex` (HTTP API), `Discovery` (Bonjour), `RemindersSync` (EventKit → the TV's to-do list), `Intents` (Siri and Shortcuts), `Brand` (design tokens) |
 | `CouchOS/Assets.xcassets` | App icon (generated), AccentColor, LaunchBackground |
 | `CouchOS/PrivacyInfo.xcprivacy` | Privacy manifest: no tracking, no collected data, UserDefaults (CA92.1) |
 | `Config/Version.xcconfig` | **The** version and build number |
-| `Config/Info.plist` | Bonjour service, local networking, export compliance, launch screen |
+| `Config/Info.plist` | Bonjour service, local networking, Reminders usage text, export compliance, launch screen |
 | `Config/ExportOptions.plist` | `xcodebuild -exportArchive` settings for App Store Connect upload |
 | `scripts/release.py` | Version, build and changelog: `show`, `bump`, `set-version`, `check`, `notes`, `release` |
 | `scripts/make-icon.swift` | Draws the app icon |
@@ -165,4 +178,5 @@ use the `Brand` tokens, never system colours.
 ## Privacy
 
 The app collects nothing. It talks only to your box, and it keeps the box's
-address, recent searches and cached artwork on the phone. See [docs/PRIVACY.md](docs/PRIVACY.md).
+address, recent searches and cached artwork on the phone. Reminders are read
+only when a list is chosen for the TV, and go only to the box. See [docs/PRIVACY.md](docs/PRIVACY.md).

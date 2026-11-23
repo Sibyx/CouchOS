@@ -79,6 +79,16 @@
     directory_mode: "0755"
   notify: Restart kodi
 
+# Read once when Kodi starts the service.
+- name: CouchOS Kodi add-on settings
+  ansible.builtin.template:
+    src: service-couchos.json.j2
+    dest: "{{ tv_home }}/.kodi/addons/service.couchos/couchos.json"
+    owner: "{{ tv_user }}"
+    group: "{{ tv_user }}"
+    mode: "0644"
+  notify: Restart kodi
+
 # The TV dashboard, as Kodi's screensaver (data from dashd).
 - name: CouchOS dashboard add-on
   ansible.builtin.copy:

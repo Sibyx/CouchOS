@@ -18,6 +18,12 @@ or tracking, and the developer runs no server it reports to.
   sort choice for libraries, and cached artwork. These stay on the device and are
   removed when you delete the app.
 - **Local Network permission** is used only to find and control the box.
+- **Reminders permission** is asked for only if you choose to show a Reminders
+  list on the TV (Dashboard → Reminders). The app then sends that one list's
+  titles, and whether each is done, to your box over your local network. Your
+  box shows them on the TV and keeps them there. Nothing else from Reminders
+  is read, and nothing leaves your network. Ticking an item in the app ticks
+  it in Reminders.
 
 ## TestFlight
 

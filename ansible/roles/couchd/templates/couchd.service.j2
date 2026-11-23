@@ -17,6 +17,10 @@ Environment=COUCHD_DISK_RESERVE_MB={{ couchd_disk_reserve_mb }}
 Environment=COUCHD_OSD_NAME={{ airplay_name }}
 Environment="COUCHD_APP_URL={{ app_build_url }}"
 Environment="COUCHD_PLEX_URL={{ plex_url }}"
+# The TV on a schedule: modes of dashd's `mode` widget (see group_vars).
+Environment=COUCHD_DASHD_URL=http://127.0.0.1:{{ dashd_port }}
+Environment="COUCHD_WAKE_MODES={{ couchd_wake_modes | join(',') }}"
+Environment="COUCHD_STANDBY_MODES={{ couchd_standby_modes | join(',') }}"
 # Disks charted on the dashboard (mount=label); unmounted ones are skipped.
 Environment="COUCHD_DISKS=/=System,{{ storage_mount }}=Media"
 Restart=always

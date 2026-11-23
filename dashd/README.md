@@ -19,7 +19,7 @@ Whatever doesn't fit shares the last slot as a carousel, one slide every 20 s. W
  (station) ──┘   (Rust)        └─ JSONRPC.NotifyAll "dashd/changed" ─► Kodi (no polling)
 ```
 
-**On the TV** the dashboard is Kodi's screensaver: Kodi shows it when the TV is idle (5 min, also while music plays), never over a video, and the first key from the TV remote or the phone goes back to Plex. The window itself lives in the always-running `service.couchos`, which keeps the last view and opens it the moment Kodi announces the screensaver (no Python interpreter to start). couchd's `POST /api/dashboard {"show": true}` wakes the TV over CEC and opens it now (the app has it under *Open on TV → Dashboard*). `{"enabled": false}` turns the idle screen back to black.
+**On the TV** the dashboard is Kodi's screensaver: Kodi shows it when the TV is idle (5 min, also while music plays), never over a video (a video paused for `dashboard_paused_minutes`, 30, with no key pressed is stopped, Plex keeping the resume point, and the dashboard opens; 0 turns that off), and the first key from the TV remote or the phone goes back to Plex. The window itself lives in the always-running `service.couchos`, which keeps the last view and opens it the moment Kodi announces the screensaver (no Python interpreter to start). couchd's `POST /api/dashboard {"show": true}` wakes the TV over CEC and opens it now (the app has it under *Open on TV → Dashboard*). `{"enabled": false}` turns the idle screen back to black.
 
 ## Design
 
@@ -69,7 +69,9 @@ All JSON answers carry `ETag`. Send `If-None-Match` to get a 304. Through Caddy 
   POST /v1/widgets/board  {"op": "message", "text": "Dinner at 7?"}   ("text": "" takes it down; an optional "from" is kept in data, not shown)
                           {"op": "add", "text": "Buy milk"}        {"op": "done", "id": 3}   ("done": false reopens)
                           {"op": "edit", "id": 3, "text": "..."}   {"op": "remove", "id": 3}   {"op": "clear_done"}
+                          {"op": "sync", "source": "reminders", "items": [{"ext_id": "…", "text": "Buy milk", "done": false, "done_at": 1795400000}]}
   ```
+  `sync` mirrors a list kept elsewhere (the app sends one Reminders list, source `reminders`). It replaces that source's items and leaves typed-in ones alone; an item keeps its id across syncs (matched by `ext_id`), and `done_at` (optional, unix seconds) dates a done one. A sync is never refused for one bad item: long titles are shortened with "…", empty ones skipped, and what doesn't fit under 40 items left out. `"items": []` takes the source's items down. Synced items carry `source` and `ext_id` in `data`.
   The TV lists open items first, then done ones dimmed for `keep_done_hours` (12); the app keeps them until cleared. Text is one line per item (80 chars), the message up to 280 chars; on the TV, `[` `]` are shown as `(` `)` (Kodi markup) and emoji are dropped (Kodi's fonts have none). Params: `name` ("board"), `rows` (6), `keep_done_hours`, `message_hours` (0 = until replaced).
 - **qr**: a QR code drawn once at start, at a whole number of pixels per module so it stays crisp. The TV's `app` widget points at the app's TestFlight invite (`app_build_url` in Ansible); an empty `url` hides it. Params: `url`, `title`, `subtitle`.
 - **daypart** (id `mode`; the TV skin reads it by that id): the time of day. It names the **mode** the dashboard is in now, and the TV applies it. A mode is a bundle of display settings: `layout` (`full`, everything; `clock`, only the time, big, on black), `dim` (0–90 %, a veil over the whole screen) and `tint` (the veil's colour, `#RRGGBB`; warm = amber). Built in: `day` (full), `evening` (full, 20 % dimmer, a little warmer) and `night` (clock, 65 % dimmer). `modes` adds more or replaces one by name.
@@ -106,7 +108,7 @@ cargo run                 # serves the default dashboard on :8766 (DASHD_CONFIG=
 - **Photo of the day** from `/srv/media/Photos` ("on this day, years ago"), alternating with the frog.
 - **Time of day, beyond the dashboard** (the `mode` widget is the one clock; these read it rather than keep their own times):
   - *Quiet hours*: no AirPlay auto-dashboard and no toasts at night; a volume cap (couchd sets Kodi's volume on a mode change).
-  - *TV off at night*: CEC standby when the mode is `night` and nothing has played for an hour; `cec_on` in the morning only on a weekday, if wanted.
+  - *TV on and off by mode* (done, in couchd): entering a mode in `couchd_wake_modes` wakes the TV and shows the dashboard; one in `couchd_standby_modes` puts it to standby unless something plays. The default config has a weekday `morning` mode (07:00–09:00, looks like day) that wakes it. Still open: standby only after nothing has played for an hour.
   - *Morning*: a `morning` layout (the duck big, umbrella or no umbrella, the next trams) from 06:30 to 08:30 on weekdays; trams only then (widget schedules, below).
   - *Per-mode carousel*: which bottom-row cards and slides show (e.g. no QR code in the evening), and a slower slide time at night.
   - *Per-mode screensaver delay*: Kodi's `screensaver.time` shorter at night, so the dim clock comes sooner.

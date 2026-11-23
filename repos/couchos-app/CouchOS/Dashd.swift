@@ -41,6 +41,18 @@ struct Dashd {
         return try await send(request, as: Envelope<Board>.self).data
     }
 
+    /// Input for any widget, e.g. {"op": "set", "mode": "night"} for "mode";
+    /// the answer is not needed.
+    func post(widget id: String, _ body: [String: Any]) async throws {
+        var request = URLRequest(url: base.appending(path: "widgets/\(id)"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        _ = try await send(request, as: Ignored.self)
+    }
+
+    private struct Ignored: Decodable {}
+
     func duck(id: String = "weather") async throws -> DuckPreview? {
         try await send(URLRequest(url: base.appending(path: "widgets/\(id)")), as: Envelope<WeatherData>.self).data.duck
     }
@@ -70,6 +82,12 @@ struct Board: Decodable, Equatable {
         let id: Int
         let text: String
         let done: Bool
+        /// "reminders" for an item synced from Reminders; nil = typed in.
+        var source: String?
+        /// Its reminder's calendarItemIdentifier.
+        var extId: String?
+
+        var fromReminders: Bool { source == RemindersSync.source && extId != nil }
     }
 
     var message: Message?

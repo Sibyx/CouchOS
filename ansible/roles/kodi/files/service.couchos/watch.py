@@ -44,6 +44,12 @@ Music on the dashboard. When AirPlay starts playing audio only (Spotify and
 the like), the dashboard opens; it shows what is playing beside everything
 else. Only when the dashboard is the screensaver, and never over video.
 
+Long pauses. A video paused for 30 min (dashboard_paused_minutes in
+Ansible, read from couchos.json at start) with no key pressed is stopped
+(Plex keeps the resume point) and the dashboard opens: Kodi's dim over a
+paused video would otherwise stay all night. Not AirPlay, and only when the
+dashboard is the screensaver.
+
 Finding the toast takes xbmc.getCondVisibility: getCurrentWindowDialogId()
 reports only the topmost dialog, which is the dashboard itself (a dialog) or
 a PM4K one, so it never saw the toast (2026-11-22). getCondVisibility
@@ -76,6 +82,13 @@ DASHBOARD = "screensaver.couchos.dashboard"
 CATALOG = "script.couchos.catalog"
 # Let the sender settle (a video handoff can follow an audio start).
 MUSIC_DELAY_SECONDS = 3
+# A video paused this long, with no key pressed for as long, is stopped and
+# the dashboard opens (Plex keeps the resume point). couchos.json in this
+# add-on (Ansible: dashboard_paused_minutes) replaces it; 0 = never.
+PAUSED_SECONDS = 30 * 60
+SETTINGS = "couchos.json"
+# Between ending Kodi's dim and starting the screensaver again.
+REDIM_SECONDS = 1.0
 PREFETCH_SECONDS = 90  # the catalog's home rows, rebuilt while it is closed
 WAKE_SECONDS = 2.0  # the catalog waits this long at most for the screensaver to end
 CLEAR_SECONDS = 1.0  # ... and this long for closed dialogs to go
@@ -100,6 +113,21 @@ def wake_screensaver():
     doing it), as a key from the phone does."""
     xbmc.executeJSONRPC(json.dumps({
         "jsonrpc": "2.0", "id": 1, "method": "Input.ExecuteAction", "params": {"action": "noop"}}))
+
+
+def load_settings():
+    """couchos.json beside this add-on, written by Ansible. Missing or
+    broken: the defaults, and the rest runs as before."""
+    global PAUSED_SECONDS
+    try:
+        path = os.path.join(xbmcaddon.Addon("service.couchos").getAddonInfo("path"), SETTINGS)
+        with open(path) as f:
+            settings = json.load(f)
+        PAUSED_SECONDS = max(0, int(settings.get("paused_minutes", PAUSED_SECONDS // 60))) * 60
+    except FileNotFoundError:
+        pass
+    except Exception as exc:  # noqa: BLE001 - a bad file must not stop the service
+        log("%s unreadable, using defaults: %r" % (SETTINGS, exc), xbmc.LOGWARNING)
 
 
 def load_lib(alias, addon_id):
@@ -328,6 +356,47 @@ def open_dashboard_for_music(player, monitor):
     xbmc.executebuiltin("ActivateScreensaver")
 
 
+def dashboard_after_long_pause(player, monitor, state):
+    """A paused video never makes way for the dashboard by itself: Kodi dims
+    over it ("use dim if paused", reported as its screensaver, which
+    screensaver_on leaves alone), for good. After PAUSED_SECONDS paused and
+    as long without a key, stop it (PM4K saves the resume point on stop),
+    end the dim, and start the screensaver again: with nothing playing,
+    that is the dashboard. AirPlay is left alone (the phone holds it), and
+    so is everything when the dashboard isn't the screensaver."""
+    if not PAUSED_SECONDS:
+        return  # turned off (dashboard_paused_minutes: 0)
+    try:
+        paused = (player.isPlayingVideo() and xbmc.getCondVisibility("Player.Paused")
+                  and not player.getPlayingFile().startswith(AIRPLAY))
+    except RuntimeError:
+        paused = False  # stopped in between
+    if not paused:
+        state["since"] = 0.0
+        return
+    now = time.time()
+    if not state["since"]:
+        state["since"] = now
+        return
+    if now - state["since"] < PAUSED_SECONDS or xbmc.getGlobalIdleTime() < PAUSED_SECONDS:
+        return
+    state["since"] = 0.0
+    if setting("screensaver.mode") != DASHBOARD:
+        return
+    log("video paused for %d min: stopping it for the dashboard" % (PAUSED_SECONDS // 60))
+    player.stop()
+    deadline = time.monotonic() + 10
+    while player.isPlaying() and time.monotonic() < deadline and not monitor.abortRequested():
+        time.sleep(0.2)
+    if player.isPlaying():
+        log("the paused video did not stop; leaving it", xbmc.LOGWARNING)
+        return
+    if monitor.screensaver:
+        wake_screensaver()  # the dim is still Kodi's screensaver: end it first
+        time.sleep(REDIM_SECONDS)
+    xbmc.executebuiltin("ActivateScreensaver")
+
+
 def cond_safe(player):
     """Can xbmc.getCondVisibility be called now? Not while PAPlayer plays
     (Plex music): it deadlocks against PAPlayer's fade-out on stop."""
@@ -359,17 +428,19 @@ def close_stuck_toast(player, state):
 
 
 def chores(monitor, player):
-    """Stuck toasts and AirPlay music, on their own thread: they keep going
-    while the catalog is open (the main thread is in its doModal), and a
-    hang in either can't freeze the dashboard, the catalog or the commands.
+    """Stuck toasts, AirPlay music and long pauses, on their own thread: they
+    keep going while the catalog is open (the main thread is in its doModal),
+    and a hang in any can't freeze the dashboard, the catalog or the commands.
     Only plain calls here: no windows, no callbacks."""
     toast = {"since": 0.0}
+    pause = {"since": 0.0}
     seconds = 0
     while not monitor.abortRequested():
         time.sleep(1)
         seconds += 1
         try:
             open_dashboard_for_music(player, monitor)
+            dashboard_after_long_pause(player, monitor, pause)
             if seconds % CHECK_SECONDS == 0:
                 close_stuck_toast(player, toast)
         except Exception as exc:  # noqa: BLE001 - never end the loop
@@ -377,12 +448,14 @@ def chores(monitor, player):
 
 
 def main():
+    load_settings()
     host = Host()
     monitor = Monitor(host)
     player = Player(host)
     HOME.setProperty(HOST, "1")
-    log("resident: dashboard %s, catalog %s; watching for stuck notifications and AirPlay music" % (
-        "ready" if host.dashboard else "missing", "ready" if host.catalog else "missing"))
+    log("resident: dashboard %s, catalog %s; watching for stuck notifications, AirPlay music and %s" % (
+        "ready" if host.dashboard else "missing", "ready" if host.catalog else "missing",
+        "pauses over %d min" % (PAUSED_SECONDS // 60) if PAUSED_SECONDS else "no pauses (off)"))
     threading.Thread(target=chores, args=(monitor, player), name="couchos-chores", daemon=True).start()
     last = time.monotonic()
     try:

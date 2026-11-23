@@ -134,6 +134,7 @@ GET  /api/info                        hostname, addresses, AirPlay name, links
 POST /api/airplay/stop                end the current AirPlay session (kodi receiver: stops the item and
                                       restarts inputstream.airplay's daemon, which drops the sender)
 POST /api/tv          {"power": "on|standby"}
+GET  /api/tv/schedule                 the modes that wake / standby the TV, the mode now, the last action
 POST /api/kodi/input  {"action": "up|down|left|right|select|back|home|info|menu|playpause|stop|forward|rewind"}
 POST /api/kodi/text   {"text": "...", "done": true}   types into the TV's on-screen keyboard
 POST /api/kodi/restart
@@ -168,6 +169,31 @@ POST /api/plex/play   {"key": "12345", "play": true, "from_start": false, "repla
                       (playing over it makes inputstream.airplay stop the sender). {"starting": true}
                       means PM4K was not running: couchd starts it and opens the item in the background.
 ```
+
+### The TV on a schedule
+
+couchd follows the dashboard's time of day (dashd's `mode` widget, the one clock). Entering a mode listed in `couchd_wake_modes` turns the TV on over CEC and shows the dashboard. It never does that over a video, and when the dashboard is turned off only the TV comes on. Entering one in `couchd_standby_modes` puts the TV to standby unless something is playing. The default wakes it on weekdays at 07:00 (a `morning` mode in `dashd_widgets` that looks like day); standby is off. Only a change seen while couchd runs counts, so a restart in the middle of the morning wakes nothing. `GET /api/tv/schedule` shows the last action.
+
+A video left paused falls back too: after `dashboard_paused_minutes` (30) paused with no key pressed, service.couchos stops it (Plex keeps the resume point) and the dashboard opens. AirPlay is left alone; 0 turns it off.
+
+The TV's own auto power-off (Samsung "Auto Power Off", LG "Auto Power Off", Sony "Idle TV standby": usually 4 h without a press on the TV's remote) is not reset by the Pi. Turn it off on the TV for the dashboard to stay up.
+
+### Siri and Shortcuts (no home hub needed)
+
+The CouchOS app adds four actions to Siri and the Shortcuts app: **Show Dashboard on TV**, **Turn TV On or Off**, **Set Dashboard Mode** (`night`, `auto`, …) and **Sync Reminders to TV**. They run in the background, at home. "Hey Siri, CouchOS dashboard" works with no setup. Personal automations in Shortcuts run them without asking, for example:
+
+- *When I join my home Wi-Fi* → Show Dashboard on TV
+- *When Reminders is closed* → Sync Reminders to TV (keeps the TV's to-do list current)
+- *At 23:00* → Set Dashboard Mode `night`
+
+Without the app, a shortcut can call the API directly with *Get Contents of URL* (method POST, request body JSON):
+
+| Action | URL | JSON body |
+|---|---|---|
+| Show the dashboard | `http://beelzebub-tv.local/api/dashboard` | `show` = true |
+| TV on / standby | `http://beelzebub-tv.local/api/tv` | `power` = `on` or `standby` |
+| Night mode | `http://beelzebub-tv.local/v1/widgets/mode` | `op` = `set`, `mode` = `night` (`op` = `auto` for the schedule) |
+| Add a to-do | `http://beelzebub-tv.local/v1/widgets/board` | `op` = `add`, `text` = … |
 
 ### Plex from the phone
 

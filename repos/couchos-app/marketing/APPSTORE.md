@@ -61,4 +61,4 @@ Without a CouchOS box on the same Wi-Fi network, the app shows "Looking for your
 
 The attached video was recorded on an iPhone 17 Pro with a real box. It shows browsing the Plex library, starting playback on the TV with Play on TV, the touchpad remote, typing into the TV, and the TV, sound and Bluetooth sheet.
 
-The Local Network permission is used only to find and talk to the box. The Reminders permission is asked for only when the user chooses to show a Reminders list on the TV (Dashboard → Reminders); that list's titles go to the box on the local network and nowhere else. No sign-in is needed. Source code: https://github.com/Sibyx/CouchOS
+The Local Network permission is used only to find and talk to the box. The Reminders permission is asked for only when the user chooses to show a Reminders list on the TV (Dashboard → Reminders, or Movies to watch); that list's titles, and for the movies list their notes and links, go to the box on the local network and nowhere else. No sign-in is needed. Source code: https://github.com/Sibyx/CouchOS

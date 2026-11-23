@@ -46,6 +46,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from plexcatalog import Catalog, PlexClient, PlexError
+from watchlist import Watchlist
 
 VERSION = "0.3.0"
 
@@ -1314,6 +1315,13 @@ class App:
         self.schedule = TvSchedule(self.cec, self.dashboard)
         self.events = EventBus()
         state = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state")
+        # The movies to watch (a Reminders list on the phone), matched to the
+        # index and shown on the TV's dashboard; needs the catalog.
+        self.watchlist = Watchlist(
+            self.catalog, state / "couchd" / "watchlist.json",
+            dashd_url=os.environ.get("COUCHD_DASHD_URL", "http://127.0.0.1:8766"),
+            art_base=f"http://127.0.0.1:{PORT}",  # Kodi loads the posters from here
+        ) if self.catalog else None
         self.metrics = Metrics(state / "couchd" / "metrics.json", metrics_disks())
         self.services = Services(state / "couchd" / "events.json")
         self._status: tuple[float, dict] | None = None
@@ -1487,6 +1495,16 @@ class App:
                 return {"via": self.cec.tv(str(body.get("power", "")))}
             case ("GET", ["tv", "schedule"]):
                 return self.schedule.status()
+            # -- the movies to watch (the phone sends its Reminders list)
+            case ("GET" | "POST", ["watchlist"]):
+                if self.watchlist is None:
+                    raise ApiError(HTTPStatus.SERVICE_UNAVAILABLE, self.catalog_error or "Plex catalog unavailable")
+                if method == "GET":
+                    return self.watchlist.status()
+                try:
+                    return self.watchlist.set(body.get("items"))
+                except ValueError as exc:
+                    raise ApiError(HTTPStatus.BAD_REQUEST, str(exc)) from exc
             case ("POST", ["kodi", "input"]):
                 action = str(body.get("action", ""))
                 if action not in KODI_INPUTS:
@@ -1635,6 +1653,8 @@ def main() -> None:
     app.start()
     DisplayWatchdog(app.services).start()
     app.schedule.start()
+    if app.watchlist:
+        app.watchlist.start()
     server = ThreadingHTTPServer((BIND, PORT), make_handler(app))
     server.daemon_threads = True
     # systemd stops us with SIGTERM: exit cleanly so the metrics get saved.

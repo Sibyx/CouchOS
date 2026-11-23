@@ -3,7 +3,7 @@
     src: "{{ playbook_dir }}/../couchd/{{ item }}"
     dest: /opt/couchos/couchd/
     mode: "0755"
-  loop: [couchd.py, plexcatalog.py]
+  loop: [couchd.py, plexcatalog.py, watchlist.py]
   notify: Restart couchd
 
 - name: couchd user service

@@ -135,6 +135,10 @@ POST /api/airplay/stop                end the current AirPlay session (kodi rece
                                       restarts inputstream.airplay's daemon, which drops the sender)
 POST /api/tv          {"power": "on|standby"}
 GET  /api/tv/schedule                 the modes that wake / standby the TV, the mode now, the last action
+GET  /api/watchlist   POST /api/watchlist {"items": [{"id", "title", "notes", "url"}]}
+                      the movies to watch (the app sends its Reminders list; it replaces the last
+                      one): each entry with "available" (in the Plex index), "via" (imdb, tmdb, title)
+                      and what it matched. The films the library has go to dashd's watchlist widget
 POST /api/kodi/input  {"action": "up|down|left|right|select|back|home|info|menu|playpause|stop|forward|rewind"}
 POST /api/kodi/text   {"text": "...", "done": true}   types into the TV's on-screen keyboard
 POST /api/kodi/restart
@@ -194,6 +198,34 @@ Without the app, a shortcut can call the API directly with *Get Contents of URL*
 | TV on / standby | `http://beelzebub-tv.local/api/tv` | `power` = `on` or `standby` |
 | Night mode | `http://beelzebub-tv.local/v1/widgets/mode` | `op` = `set`, `mode` = `night` (`op` = `auto` for the schedule) |
 | Add a to-do | `http://beelzebub-tv.local/v1/widgets/board` | `op` = `add`, `text` = … |
+
+### Movies to watch
+
+A shared Reminders list (e.g. "Movies"), chosen in the app under Dashboard → Movies to watch. The films the Plex library has show on the TV's dashboard in a "To watch" card, one at a time: poster, title, year, director and ratings (IMDb, Rotten Tomatoes). The card takes the QR code's place while there are any.
+
+**One film per reminder:**
+
+| Field | What goes in it | Example |
+|---|---|---|
+| Title | The film's name, the year optional | `The Matrix (1999)` |
+| Notes | A link to the film | `https://www.imdb.com/title/tt0133093/` |
+
+- IMDb (`imdb.com/title/tt…`) and TMDB (`themoviedb.org/movie/…`) links match exactly, by the IDs Plex has. Letterboxd links (`letterboxd.com/film/…`, and the app's `boxd.it/…` short links, which couchd follows once) and reminders without a link match by title and year, against the library's title and original title (so `Učiteľka (2016)` finds The Teacher).
+- Page titles from the Share Sheet are fine as they are: "The Matrix (1999) - IMDb" and "Dune (2021) directed by … • Letterboxd" lose the site's part.
+- Tick a reminder when you've watched it (in Reminders, or swipe Watched in the app): it leaves the TV.
+- A film added to Plex later shows up after the next catalog sync (every 5 minutes).
+- The app shows each entry as "In Plex" or "Not in Plex".
+
+**Adding films from IMDb, Letterboxd or Safari:** an "Add to Movies" Share Sheet shortcut (Shortcuts → +):
+1. *Receive* **URLs** and **Safari web pages** *from* **Share Sheet**
+2. *Get Name of* **Shortcut Input**
+3. *Add New Reminder*: title **Name**, list **Movies**, notes **Shortcut Input**
+4. *Sync Movies to TV* (CouchOS), so it shows at once
+5. *(optional)* *Show Notification* "Added"
+
+Then on a film's page: Share → Add to Movies. If a link comes in without a page title, its name is the link itself; that is fine, the link is matched first.
+
+The Pi can't read Reminders itself: on a shared list, what someone else adds reaches the TV the next time your phone syncs (CouchOS opened, the shortcut, or an automation such as "When Reminders is closed" → Sync Movies to TV).
 
 ### Plex from the phone
 

@@ -136,8 +136,14 @@ The Plex catalog from couchd's index on the box:
   board `sync`, source `reminders`). It syncs when the app opens, on every change
   while it is open, and when an item is ticked in the app, which ticks it in
   Reminders too. Synced items are deleted in Reminders, not in the app.
+- **Movies to watch** (same screen): a shared Reminders list, one film per
+  reminder (title, and an IMDb, TMDB or Letterboxd link in the notes). The app
+  sends the open reminders to couchd (`POST /api/watchlist`), which matches
+  them to the Plex index; the films the library has show on the TV's
+  dashboard. Each entry shows "In Plex" or "Not in Plex"; swiping one to
+  Watched ticks the reminder, which takes it off the TV.
 - **Siri and Shortcuts** (`Intents.swift`): Show Dashboard on TV, Turn TV On or
-  Off, Set Dashboard Mode, Sync Reminders to TV. They run in the background
+  Off, Set Dashboard Mode, Sync Reminders to TV, Sync Movies to TV. They run in the background
   against the last box found, at home only. No home hub is needed; a Shortcuts
   personal automation ("When Reminders is closed" → Sync Reminders to TV, "When
   I join my Wi-Fi" → Show Dashboard) runs them without opening the app.
@@ -146,7 +152,7 @@ The Plex catalog from couchd's index on the box:
 
 | Path | What |
 |---|---|
-| `CouchOS/` | The app: SwiftUI views, `AppModel` (state and actions), `KodiLink` (TCP JSON-RPC), `Couchd`, `Dashd` and `Plex` (HTTP API), `Discovery` (Bonjour), `RemindersSync` (EventKit → the TV's to-do list), `Intents` (Siri and Shortcuts), `Brand` (design tokens) |
+| `CouchOS/` | The app: SwiftUI views, `AppModel` (state and actions), `KodiLink` (TCP JSON-RPC), `Couchd`, `Dashd` and `Plex` (HTTP API), `Discovery` (Bonjour), `RemindersSync` (EventKit → the TV's to-do list and movies to watch), `Intents` (Siri and Shortcuts), `Brand` (design tokens) |
 | `CouchOS/Assets.xcassets` | App icon (generated), AccentColor, LaunchBackground |
 | `CouchOS/PrivacyInfo.xcprivacy` | Privacy manifest: no tracking, no collected data, UserDefaults (CA92.1) |
 | `Config/Version.xcconfig` | **The** version and build number |

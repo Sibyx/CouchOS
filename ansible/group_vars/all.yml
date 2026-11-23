@@ -136,7 +136,7 @@ dashboard_enabled: true
 # stopped (Plex keeps the resume point) and the dashboard opens. Not AirPlay.
 # 0 = never: Kodi's dim stays over a paused video.
 dashboard_paused_minutes: 30
-dashd_version: 0.5.0
+dashd_version: 0.6.0
 dashd_dist: "{{ playbook_dir }}/../dashd/dist/dashd-{{ dashd_version }}-trixie-arm64"
 dashd_port: 8766
 # Widgets: {id, kind, params}. The TV skin binds these ids (clock, weather,
@@ -168,6 +168,10 @@ dashd_widgets:
   - id: app
     kind: qr
     params: {url: "{{ app_build_url }}", title: "CouchOS app", subtitle: "Scan to join the beta"}
+  # The movies to watch that are in Plex: a shared Reminders list on the
+  # phone (the app sends it), matched by couchd, pushed here. Its card takes
+  # the app card's place while there are any. The TV skin binds the id.
+  - {id: watchlist, kind: watchlist}
   # Time of day (the TV skin reads it by the id "mode"). Modes: day (all),
   # evening (dimmed 20 %, a little warmer), night (only the time, dimmed
   # 65 %); rules run in order, a later one wins. Times: "HH:MM", "sunrise",
@@ -214,6 +218,9 @@ journal_max_use: 200M
 # The app's TestFlight public invite: the web page links it and the TV
 # dashboard shows it as a QR code (widget "app"). Empty hides both.
 app_build_url: "https://testflight.apple.com/join/Ur8dT4mb"
-plex_url: https://plex.nase.zbytocnosti.sk
+# The Plex server's public URL. Set it in the gitignored
+# group_vars/couchos/local.yml (it overrides this file), e.g.
+#   plex_url: https://plex.example.com
+plex_url: ""
 web_port: 80
 caddy_image: docker.io/library/caddy:2.10-alpine

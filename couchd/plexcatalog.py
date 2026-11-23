@@ -229,6 +229,43 @@ def _tags(m: dict, name: str) -> list[str]:
     return [t["tag"] for t in m.get(name) or [] if t.get("tag")]
 
 
+def _guids(kind: str) -> int:
+    """includeGuids for a library listing: movies only (the watch list needs
+    them). For all ~58,000 episodes it made pages slow enough that a full
+    sync of the TV shows timed out (2026-11-23)."""
+    return 1 if kind == "movie" else 0
+
+
+def _ids(m: dict) -> dict:
+    """External IDs from Plex's Guid list (asked for with includeGuids=1):
+    {"imdb": "tt0133093", "tmdb": "603"}. The watch list matches on them."""
+    ids = {}
+    for g in m.get("Guid") or []:
+        scheme, _, value = str(g.get("id") or "").partition("://")
+        if scheme in ("imdb", "tmdb") and value:
+            ids[scheme] = value
+    return ids
+
+
+def _source(image: str | None) -> str | None:
+    """"rottentomatoes://image.rating.ripe" -> "rottentomatoes"."""
+    return image.split("://", 1)[0] if image and "://" in image else None
+
+
+def _ratings(m: dict) -> dict:
+    """Both of Plex's scores (0-10) with where each comes from: the critic
+    one is Rotten Tomatoes' for most movies, the audience one Rotten
+    Tomatoes', IMDb's or TMDB's, depending on the agent."""
+    out = {}
+    for kind, value, image in (("critic", m.get("rating"), m.get("ratingImage")),
+                               ("audience", m.get("audienceRating"), m.get("audienceRatingImage"))):
+        if value is not None:
+            out[kind] = value
+            if _source(image):
+                out[f"{kind}_source"] = _source(image)
+    return out
+
+
 def normalize(m: dict) -> dict:
     """The fields the phone shows (and the index needs), from one Plex entry."""
     kind = m.get("type")
@@ -264,6 +301,8 @@ def normalize(m: dict) -> dict:
         "child_count": m.get("childCount"),
         "content_rating": m.get("contentRating"),
         "rating": m.get("audienceRating") or m.get("rating"),
+        "ratings": _ratings(m),
+        "ids": _ids(m),
         "genres": _tags(m, "Genre"),
         "directors": _tags(m, "Director")[:3],
         "cast": _tags(m, "Role")[:8],
@@ -274,7 +313,7 @@ def normalize(m: dict) -> dict:
         "updated_at": m.get("updatedAt"),
         "viewed_at": m.get("lastViewedAt"),
     }
-    return {k: v for k, v in item.items() if v not in (None, "", [])}
+    return {k: v for k, v in item.items() if v not in (None, "", [], {})}
 
 
 def _unwatched(item: dict) -> int:
@@ -661,7 +700,7 @@ class Catalog:
                 start, total = 0, None
                 while total is None or start < total:
                     container = self.client.get(f"/library/sections/{s['key']}/all", {
-                        "type": PLEX_TYPE[kind], "includeGuids": 0,
+                        "type": PLEX_TYPE[kind], "includeGuids": _guids(kind),
                         "X-Plex-Container-Start": start, "X-Plex-Container-Size": PAGE,
                     }, timeout=SYNC_TIMEOUT)
                     metas = container.get("Metadata") or []
@@ -698,7 +737,7 @@ class Catalog:
                     start = 0
                     while start < 1000:
                         container = self.client.get(f"/library/sections/{s['key']}/all", {
-                            "type": PLEX_TYPE[kind], "sort": f"{field}:desc", "includeGuids": 0,
+                            "type": PLEX_TYPE[kind], "sort": f"{field}:desc", "includeGuids": _guids(kind),
                             "X-Plex-Container-Start": start, "X-Plex-Container-Size": 50,
                         })
                         metas = container.get("Metadata") or []
@@ -737,7 +776,9 @@ class Catalog:
 
     def refresh(self, key: str, subtree: bool = False, timeout: float = PLEX_TIMEOUT, retry: bool = True) -> dict | None:
         """Fetch one entry (and, with subtree, everything under it) from the server."""
-        container = self.client.get(f"/library/metadata/{key}", timeout=timeout, retry=retry)
+        # includeGuids on every fetch that is written to the index: a row
+        # written without them would lose its IMDb/TMDB IDs (the watch list).
+        container = self.client.get(f"/library/metadata/{key}", {"includeGuids": 1}, timeout=timeout, retry=retry)
         found = container.get("Metadata") or []
         if not found:
             with self._tx() as db:
@@ -1267,6 +1308,23 @@ class Catalog:
             "done": job["done"] if job else None,
             "total": job["total"] if job else None,
         }
+
+    def movies(self) -> list[dict]:
+        """Every movie in the index, as stored (normalize()), for the watch list."""
+        return [json.loads(r["data"]) for r in self._query("SELECT data FROM items WHERE type='movie'")]
+
+    def synced_at(self) -> float:
+        """When the index last changed from a sync (0 before the first)."""
+        try:
+            return float(self._meta("synced_at") or 0)
+        except ValueError:
+            return 0.0
+
+    def plex_ratings(self, key: str) -> list[dict]:
+        """One entry's full ratings list (IMDb, Rotten Tomatoes, TMDB), straight
+        from the server: only its own page has the IMDb rating."""
+        found = self.client.get(f"/library/metadata/{key}", timeout=PLEX_TIMEOUT).get("Metadata") or []
+        return (found[0].get("Rating") or []) if found else []
 
     def set_section(self, key: str, enabled: bool | None = None, prefetch_art: bool | None = None) -> dict:
         rows = self._query("SELECT * FROM sections WHERE key=?", (key,))

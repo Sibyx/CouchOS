@@ -5,6 +5,7 @@ pub mod clock;
 pub mod daypart;
 pub mod frog;
 pub mod qr;
+pub mod watchlist;
 pub mod weather;
 
 use serde_json::Value;
@@ -19,6 +20,7 @@ pub const KINDS: &[(&str, Factory)] = &[
     ("board", board::build),
     ("qr", qr::build),
     ("daypart", daypart::build),
+    ("watchlist", watchlist::build),
 ];
 
 pub fn build(kind: &str, params: &Value) -> Result<Box<dyn Widget>> {
@@ -71,9 +73,19 @@ mod skin_contract {
         let ctx = ctx_at(fake, Date { year: 2026, month: 11, day: 22 });
         // Set by the screensaver itself, not by dashd: "offline" when dashd
         // does not answer, "slide" for the carousel, "board.cards" for how
-        // many bottom-row slots the board's cards take.
-        let mut served: BTreeSet<String> =
-            ["offline".to_owned(), "slide".to_owned(), "board.cards".to_owned()].into();
+        // many bottom-row slots the board's cards take, and the film the
+        // watch list card features now (copied from watchlist.item<N>.*).
+        let mut served: BTreeSet<String> = [
+            "offline",
+            "slide",
+            "board.cards",
+            "watchlist.title",
+            "watchlist.line",
+            "watchlist.ratings",
+            "watchlist.poster",
+        ]
+        .map(str::to_owned)
+        .into();
         let widgets = [
             ("clock", "clock", json!(null)),
             ("weather", "weather", json!({"place": "Here", "latitude": 1, "longitude": 2, "hours_step": 1, "hours_count": 6})),
@@ -81,6 +93,7 @@ mod skin_contract {
             ("board", "board", json!(null)),
             ("app", "qr", json!({"url": "https://example.com"})),
             ("mode", "daypart", json!(null)),
+            ("watchlist", "watchlist", json!(null)),
         ];
         for (id, kind, params) in widgets {
             let w = super::build(kind, &params).unwrap();

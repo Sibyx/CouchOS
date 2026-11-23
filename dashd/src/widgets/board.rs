@@ -187,7 +187,7 @@ fn shorten(text: &str, max: usize) -> String {
 /// Kodi label markup is [B], [COLOR ...], [CR]: user text must not be read
 /// as markup, and a line break becomes Kodi's own. Kodi's fonts have no
 /// emoji (they would show as boxes), so those go; the app keeps them.
-fn kodi_text(text: &str) -> String {
+pub(crate) fn kodi_text(text: &str) -> String {
     let plain: String = text
         .chars()
         .filter(|&c| !(c as u32 >= 0x1_F000 || ('\u{2600}'..='\u{27BF}').contains(&c) || c == '\u{FE0F}' || c == '\u{200D}'))

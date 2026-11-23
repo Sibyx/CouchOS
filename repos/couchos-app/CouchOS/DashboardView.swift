@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// The TV dashboard from the phone: the duck as the TV shows it, a message
-/// for whoever is on the couch, and the shared TODO list. Changes show on
-/// the TV at once (dashd notifies Kodi).
+/// for whoever is on the couch, the shared TODO list, and the movies to
+/// watch (MovieListSection). Changes show on the TV at once (dashd notifies Kodi).
 struct DashboardView: View {
     @Environment(AppModel.self) private var model
     @State private var board: Board?
@@ -11,7 +11,7 @@ struct DashboardView: View {
     @State private var newItem = ""
     @State private var busy = false
     @State private var remindersList: String?
-    @State private var reminderLists: [RemindersSync.List] = []
+    @State private var reminderLists: [ReminderStore.List] = []
     @FocusState private var addFocused: Bool
 
     var body: some View {
@@ -139,6 +139,8 @@ struct DashboardView: View {
                      ? "Its open reminders join the TV's to-do list, and stay in step whenever CouchOS is open."
                      : "Syncs whenever CouchOS is open. To keep the TV current otherwise, add a Shortcuts automation: “When Reminders is closed” → “Sync Reminders to TV”.")
             }
+
+            MovieListSection()
         }
         .navigationTitle("Dashboard")
         .navigationBarTitleDisplayMode(.inline)
@@ -149,7 +151,7 @@ struct DashboardView: View {
     private func load() async {
         let reminders = RemindersSync.shared
         remindersList = reminders.isOn ? reminders.listID : nil
-        reminderLists = reminders.lists()
+        reminderLists = ReminderStore.shared.lists()
         guard let dashd = model.dashd else { return }
         do {
             // Synced first, so the list opens already in step with Reminders.
@@ -173,11 +175,11 @@ struct DashboardView: View {
     }
 
     private func startReminders() async {
-        guard await RemindersSync.shared.requestAccess() else {
-            model.message = RemindersSync.SyncError.noAccess.localizedDescription
+        guard await ReminderStore.shared.requestAccess() else {
+            model.message = ReminderError.noAccess.localizedDescription
             return
         }
-        reminderLists = RemindersSync.shared.lists()
+        reminderLists = ReminderStore.shared.lists()
         guard let first = reminderLists.first else {
             model.message = "There are no lists in Reminders yet."
             return
@@ -188,7 +190,7 @@ struct DashboardView: View {
     private func choose(_ list: String?) {
         remindersList = list
         reminders { try await $0.choose(list) }
-        if list != nil { RemindersSync.shared.observe() }
+        if list != nil { ReminderStore.shared.observe() }
     }
 
     private func reminders(_ work: @escaping @MainActor (RemindersSync) async throws -> Board?) {

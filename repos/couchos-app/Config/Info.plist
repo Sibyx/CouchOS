@@ -10,7 +10,7 @@
 		<true/>
 	</dict>
 	<key>NSRemindersFullAccessUsageDescription</key>
-	<string>CouchOS shows the Reminders list you choose on your TV's to-do list, and ticks items off there when you tick them in the app.</string>
+	<string>CouchOS shows the Reminders lists you choose on your TV: a to-do list, and a list of movies to watch (with their links), matched to your Plex library. It ticks items off in Reminders when you tick them in the app.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_couchos._tcp</string>

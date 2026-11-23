@@ -44,8 +44,12 @@ SHIFTS = [(0, 0), (6, 4), (-4, 8), (8, -4), (-6, -6), (2, 10)]
 # box at (660, 465); these keep it inside 1920 x 1080 with a margin.
 CLOCK_SHIFTS = [(0, 0), (-480, -300), (420, 260), (-300, 320), (480, -280), (120, -360), (-120, 360)]
 SLIDE_SECONDS = 20
-# (slide, the view key that has to be set for it to show), in order.
-SLIDES = [("days", "weather.days"), ("app", "app.image")]
+# (slide, view keys of which one has to be set for it to show), in order.
+# The "app" slot shows the movies to watch instead of the app while there are any.
+SLIDES = [("days", ("weather.days",)), ("app", ("app.image", "watchlist.n"))]
+# The movies to watch card features one film at a time, the next this often.
+WATCH_SECONDS = 15
+WATCH_FIELDS = ("title", "line", "ratings", "poster")
 # Bottom-row cards shown only when these view keys are set (the TO DO list).
 BOARD_CARDS = ("board.items",)
 HOST = "couchos.host"  # Window(Home) property: service.couchos is up
@@ -110,6 +114,8 @@ class Dashboard(xbmcgui.WindowXMLDialog):
         self._shown = {}
         self._shift = 0
         self._slide = ""
+        self._movie = 0  # which film the watch list card features
+        self._featured = None
         self.closed = False
 
     def apply(self, view):
@@ -130,9 +136,32 @@ class Dashboard(xbmcgui.WindowXMLDialog):
             self.clearProperty("offline")
         if self._slide not in self.slides():
             self.next_slide()
+        self.show_movie()
 
     def slides(self):
-        return [name for name, key in SLIDES if self._shown.get(key)]
+        return [name for name, keys in SLIDES if any(self._shown.get(k) for k in keys)]
+
+    def show_movie(self):
+        """Copy the featured film's strings (watchlist.item<N>.*) to the
+        card's own properties (watchlist.*), only when they change."""
+        try:
+            count = int(self._shown.get("watchlist.n") or 0)
+        except ValueError:
+            count = 0
+        if count:
+            self._movie %= count
+            k = self._movie + 1
+            featured = tuple(self._shown.get("watchlist.item%d.%s" % (k, f), "") for f in WATCH_FIELDS)
+        else:
+            featured = ("",) * len(WATCH_FIELDS)
+        if featured != self._featured:
+            self._featured = featured
+            for field, value in zip(WATCH_FIELDS, featured):
+                self.setProperty("watchlist." + field, value)
+
+    def next_movie(self):
+        self._movie += 1
+        self.show_movie()
 
     def next_slide(self):
         """Show the slide after the current one (the first one at start)."""
@@ -221,6 +250,8 @@ class Resident:
             self.window.drift()
         if int(self.ticks) // SLIDE_SECONDS != int(before) // SLIDE_SECONDS:
             self.window.next_slide()
+        if int(self.ticks) // WATCH_SECONDS != int(before) // WATCH_SECONDS:
+            self.window.next_movie()
 
 
 class Monitor(xbmc.Monitor):
@@ -259,5 +290,7 @@ def run(addon_path):
             window.drift()
         if ticks % SLIDE_SECONDS == 0:
             window.next_slide()
+        if ticks % WATCH_SECONDS == 0:
+            window.next_movie()
     window.close()
     del window

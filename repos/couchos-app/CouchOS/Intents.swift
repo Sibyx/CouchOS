@@ -97,6 +97,23 @@ struct SyncRemindersIntent: AppIntent {
     }
 }
 
+struct SyncMoviesIntent: AppIntent {
+    static var title: LocalizedStringResource { "Sync Movies to TV" }
+    static var description: IntentDescription {
+        "Sends the movies list chosen in CouchOS (Dashboard → Movies to watch) to the box, which shows the films your Plex library has on the TV. Put it at the end of an “Add to Movies” shortcut, so a new film shows at once."
+    }
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ReturnsValue<Int> {
+        let movies = MovieListSync.shared
+        guard movies.listID != nil else {
+            throw IntentError("No movies list is shown on the TV. Choose one in CouchOS under Dashboard → Movies to watch.")
+        }
+        let result = try await movies.sync()
+        return .result(value: result?.shown ?? 0)
+    }
+}
+
 struct CouchOSShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
@@ -122,6 +139,12 @@ struct CouchOSShortcuts: AppShortcutsProvider {
             phrases: ["Sync reminders to \(.applicationName)", "Send my reminders to \(.applicationName)"],
             shortTitle: "Sync Reminders",
             systemImageName: "checklist"
+        )
+        AppShortcut(
+            intent: SyncMoviesIntent(),
+            phrases: ["Sync movies to \(.applicationName)", "Update the movies on \(.applicationName)"],
+            shortTitle: "Sync Movies",
+            systemImageName: "film.stack"
         )
     }
 }

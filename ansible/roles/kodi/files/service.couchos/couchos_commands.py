@@ -18,10 +18,12 @@ COMMANDS = {
     # ("Activate of window refused because there are active modal dialogs"),
     # e.g. PM4K's busy spinner or its exit prompt. Close them, then go full screen.
     "show_video": ["Dialog.Close(all,true)", "ActivateWindow(fullscreenvideo)"],
-    # The dashboard now (it is the screensaver; Kodi also starts it on idle).
-    # Wake the TV first and wait: Kodi ends the screensaver when CEC reports it
-    # became the active source, which would close the dashboard right away.
-    "dashboard": ["CECActivateSource", 5000, "Dialog.Close(all,true)", "ActivateScreensaver"],
+    # The dashboard now (it is the screensaver; Kodi also starts it on idle),
+    # at once. Waking the TV over CEC makes Kodi end the screensaver: at
+    # once, again a moment later (seen 2026-11-23, TV already on), and when a
+    # TV that was off reports it switched to us. watch.py (DASHBOARD_HOLD)
+    # puts it back each time, unless a key was pressed. (It used to wait 5 s.)
+    "dashboard": ["CECActivateSource", "Dialog.Close(all,true)", "ActivateScreensaver"],
 }
 
 

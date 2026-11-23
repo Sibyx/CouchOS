@@ -30,6 +30,8 @@ All notable changes to the CouchOS iOS app.
 - Open on TV → CouchOS search: opens the TV's own catalog, for searching with the TV remote. (build 3)
 - Dashboard → Reminders: show a Reminders list on the TV's to-do list. It stays in step while the app is open, and ticking an item in the app ticks it in Reminders. (build 6)
 - Siri and Shortcuts actions: Show Dashboard on TV, Turn TV On or Off, Set Dashboard Mode (e.g. "Good night"), and Sync Reminders to TV. They also work in Shortcuts automations. (build 6)
+- Dashboard → Movies to watch: pick a shared Reminders list of films (a link in each one's notes); the ones in your Plex library show on the TV with poster, director and ratings. Each entry says whether it was found; swipe to mark one watched. (build 7)
+- Sync Movies to TV action for Siri and Shortcuts, e.g. at the end of an "Add to Movies" share-sheet shortcut. (build 7)
 
 ### Changed
 - Open on TV → CouchOS search opens at once: the TV keeps the catalog ready instead of starting it. (build 4)

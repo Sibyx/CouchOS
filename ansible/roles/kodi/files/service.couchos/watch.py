@@ -89,6 +89,13 @@ PAUSED_SECONDS = 30 * 60
 SETTINGS = "couchos.json"
 # Between ending Kodi's dim and starting the screensaver again.
 REDIM_SECONDS = 1.0
+# The "dashboard" command wakes the TV and shows it at once. Kodi ends the
+# screensaver on the CEC wake: twice within 0.4 s with the TV on, and once
+# more when a TV that was off reports it switched to us. Within this long, a
+# screensaver ended with no key pressed (Kodi's idle time >= 1 s) is CEC:
+# show it again, up to DASHBOARD_RESHOWS times.
+DASHBOARD_HOLD = 10.0
+DASHBOARD_RESHOWS = 3
 PREFETCH_SECONDS = 90  # the catalog's home rows, rebuilt while it is closed
 WAKE_SECONDS = 2.0  # the catalog waits this long at most for the screensaver to end
 CLEAR_SECONDS = 1.0  # ... and this long for closed dialogs to go
@@ -156,6 +163,9 @@ class Host:
         self.want_catalog = 0.0  # when the catalog was asked for, 0 = not
         self.want_dashboard = False
         self.screensaver = False  # Kodi's, as its callbacks report it
+        self.hold_until = 0.0  # see DASHBOARD_HOLD (monotonic), 0 = none
+        self.reshows_left = 0
+        self.reshow = False  # the loop starts the screensaver again
         self.prefetched = 0.0
         try:
             path = load_lib("couchos_dashboard", DASHBOARD)
@@ -193,8 +203,23 @@ class Host:
         self.want_dashboard = False
         if self.dashboard is not None:
             self.dashboard.hide()
+        if self.hold_until and time.monotonic() < self.hold_until and self.reshows_left:
+            # A key (TV remote or phone) resets Kodi's idle time: then it was
+            # meant, and the hold ends. Else it is the TV waking over CEC.
+            if xbmc.getGlobalIdleTime() >= 1 and not xbmc.Player().isPlayingVideo():
+                self.reshows_left -= 1
+                log("screensaver ended by the TV waking up: showing the dashboard again")
+                self.reshow = True
+            else:
+                self.hold_until = 0.0
+
+    def hold_dashboard(self):
+        """The "dashboard" command just ran: see DASHBOARD_HOLD."""
+        self.hold_until = time.monotonic() + DASHBOARD_HOLD
+        self.reshows_left = DASHBOARD_RESHOWS
 
     def open_catalog(self):
+        self.hold_until = 0.0  # the catalog takes over: don't bring the dashboard back
         if self.catalog is None:
             return
         if self.catalog_open and self.session.on_top():
@@ -255,6 +280,9 @@ class Host:
         self.prefetched = 0.0  # watched state changes after playing
 
     def tick(self, seconds):
+        if self.reshow:
+            self.reshow = False
+            xbmc.executebuiltin("ActivateScreensaver")
         # Once the screensaver has ended (or it didn't within WAKE_SECONDS).
         if self.want_catalog and (not self.screensaver or
                                   time.monotonic() - self.want_catalog > WAKE_SECONDS):
@@ -307,7 +335,9 @@ class Monitor(xbmc.Monitor):
                 # (this callback may not run: a dialog is open, the service hung).
                 if ack:
                     HOME.setProperty("couchos.ack", ack)
-                # On a worker: "dashboard" pauses 5 s, and callbacks must not block.
+                if command == "dashboard":
+                    self.host.hold_dashboard()
+                # On a worker: builtins run waiting, and callbacks must not block.
                 threading.Thread(target=couchos_commands.run, args=(command,), daemon=True).start()
 
 

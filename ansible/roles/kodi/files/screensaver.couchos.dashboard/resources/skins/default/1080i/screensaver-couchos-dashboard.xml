@@ -479,10 +479,11 @@
                 </control>
 
                 <!-- the app: scan from the couch. A card of its own when
-                     there's room, else a carousel slide. -->
+                     there's room, else a carousel slide. The movies to watch
+                     (below) take its place while there are any. -->
                 <control type="group">
                     <width>570</width><height>304</height>
-                    <visible>!String.IsEmpty(Window.Property(app.image)) + [[String.IsEmpty(Window.Property(board.message)) + [[String.IsEqual(Window.Property(board.cards),1) + [!Player.HasAudio | String.IsEqual(Window.Property(slide),app)]] | String.IsEqual(Window.Property(board.cards),0)]] | [!String.IsEmpty(Window.Property(board.message)) + String.IsEqual(Window.Property(board.cards),0) + !Player.HasAudio]]</visible>
+                    <visible>!String.IsEmpty(Window.Property(app.image)) + String.IsEmpty(Window.Property(watchlist.n)) + [[String.IsEmpty(Window.Property(board.message)) + [[String.IsEqual(Window.Property(board.cards),1) + [!Player.HasAudio | String.IsEqual(Window.Property(slide),app)]] | String.IsEqual(Window.Property(board.cards),0)]] | [!String.IsEmpty(Window.Property(board.message)) + String.IsEqual(Window.Property(board.cards),0) + !Player.HasAudio]]</visible>
                     <animation effect="fade" time="400">Visible</animation>
                     <control type="image"><left>0</left><top>0</top><width>570</width><height>304</height><texture border="24" colordiffuse="14FFFFFF">card.png</texture></control>
                     <!-- 198 px = 33 modules x 6: drawn at its own size, never scaled -->
@@ -500,6 +501,52 @@
                         <left>262</left><top>156</top><width>276</width><height>96</height>
                         <font>font27</font><textcolor>FF8A8A8A</textcolor>
                         <label>$INFO[Window.Property(app.subtitle)]</label>
+                    </control>
+                </control>
+
+                <!-- the movies to watch that are in Plex (the phone's
+                     Reminders list, matched by couchd): the app card's slot
+                     and rules, while there are any. One film at a time,
+                     the next every WATCH_SECONDS (dashboard.py copies
+                     watchlist.item<N>.* to watchlist.*). Poster 2:3,
+                     171 x 256 (couchd sends 200 x 300: within the limit). -->
+                <control type="group">
+                    <width>570</width><height>304</height>
+                    <visible>!String.IsEmpty(Window.Property(watchlist.n)) + [[String.IsEmpty(Window.Property(board.message)) + [[String.IsEqual(Window.Property(board.cards),1) + [!Player.HasAudio | String.IsEqual(Window.Property(slide),app)]] | String.IsEqual(Window.Property(board.cards),0)]] | [!String.IsEmpty(Window.Property(board.message)) + String.IsEqual(Window.Property(board.cards),0) + !Player.HasAudio]]</visible>
+                    <animation effect="fade" time="400">Visible</animation>
+                    <control type="image"><left>0</left><top>0</top><width>570</width><height>304</height><texture border="24" colordiffuse="14FFFFFF">card.png</texture></control>
+                    <control type="image">
+                        <left>24</left><top>24</top><width>171</width><height>256</height>
+                        <aspectratio>keep</aspectratio>
+                        <fadetime>400</fadetime>
+                        <texture background="true">$INFO[Window.Property(watchlist.poster)]</texture>
+                    </control>
+                    <control type="label">
+                        <left>219</left><top>22</top><width>160</width><height>28</height>
+                        <font>font12</font><textcolor>FFFFD23F</textcolor>
+                        <label>TO WATCH</label>
+                    </control>
+                    <control type="label">
+                        <left>379</left><top>22</top><width>159</width><height>28</height>
+                        <align>right</align><font>font12</font><textcolor>FF8A8A8A</textcolor>
+                        <label>$INFO[Window.Property(watchlist.count)]</label>
+                    </control>
+                    <!-- title: two lines, then cut -->
+                    <control type="textbox">
+                        <left>219</left><top>58</top><width>319</width><height>84</height>
+                        <font>font27</font><textcolor>FFF2F2F2</textcolor>
+                        <label>[B]$INFO[Window.Property(watchlist.title)][/B]</label>
+                    </control>
+                    <!-- year and directors: two lines -->
+                    <control type="textbox">
+                        <left>219</left><top>148</top><width>319</width><height>64</height>
+                        <font>font12</font><textcolor>FFB8B8B8</textcolor>
+                        <label>$INFO[Window.Property(watchlist.line)]</label>
+                    </control>
+                    <control type="label">
+                        <left>219</left><top>238</top><width>319</width><height>38</height>
+                        <font>font27</font><textcolor>FFFFD23F</textcolor>
+                        <label>$INFO[Window.Property(watchlist.ratings)]</label>
                     </control>
                 </control>
             </control>

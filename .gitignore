@@ -25,6 +25,7 @@ DerivedData/
 # Ansible
 *.retry
 ansible/.vault-pass
+ansible/group_vars/couchos/local.yml
 
 # Leftover from another project (nothing builds from the repo root)
 /.dockerignore
